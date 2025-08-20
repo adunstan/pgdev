@@ -20,15 +20,20 @@
 #include <fcntl.h>
 
 #include "access/amapi.h"
+#include "access/heaptoast.h"
 #include "access/htup_details.h"
 #include "access/relation.h"
 #include "access/table.h"
+#include "access/toast_compression.h"
+#include "catalog/partition.h"
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_attrdef.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_depend.h"
+#include "catalog/pg_inherits.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -38,6 +43,7 @@
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "commands/tablecmds.h"
 #include "commands/tablespace.h"
 #include "common/keywords.h"
 #include "executor/spi.h"
@@ -13707,3 +13713,614 @@ get_range_partbound_string(List *bound_datums)
 
 	return buf->data;
 }
+
+/*
+ * pg_get_table_ddl - Generate CREATE TABLE DDL for a given relation
+ *
+ * This function should be added to src/backend/utils/adt/ruleutils.c
+ */
+
+/* Function declaration for ruleutils.c */
+Datum pg_get_table_ddl(PG_FUNCTION_ARGS);
+
+/*
+ * pg_get_table_ddl
+ *
+ * Returns the CREATE TABLE DDL statement for the specified table.
+ * Handles regular, temporary, unlogged, and partitioned tables.
+ */
+Datum
+pg_get_table_ddl(PG_FUNCTION_ARGS)
+{
+    Oid         relid = PG_GETARG_OID(0);
+    StringInfoData buf;
+    Relation    rel;
+    TupleDesc   tupdesc;
+    Form_pg_class relform;
+    char       *tablename;
+    char       *schemaname;
+    char       *tablespacename = NULL;
+    bool        first_col = true;
+    int         i;
+
+    /* Open the relation */
+    rel = relation_open(relid, AccessShareLock);
+    relform = RelationGetForm(rel);
+
+    /* Only handle tables and partitioned tables */
+    if (relform->relkind != RELKIND_RELATION &&
+        relform->relkind != RELKIND_PARTITIONED_TABLE)
+    {
+        relation_close(rel, AccessShareLock);
+        ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                 errmsg("relation \"%s\" is not a table",
+                        RelationGetRelationName(rel))));
+    }
+
+	/* Get tuple descriptor */
+	tupdesc = RelationGetDescr(rel);
+
+    initStringInfo(&buf);
+
+    /* Get table and schema names */
+    tablename = RelationGetRelationName(rel);
+    schemaname = get_namespace_name(RelationGetNamespace(rel));
+
+    /* Start building the CREATE TABLE statement */
+    appendStringInfo(&buf, "CREATE ");
+
+    /* Add table type modifiers */
+    if (relform->relpersistence == RELPERSISTENCE_UNLOGGED)
+        appendStringInfoString(&buf, "UNLOGGED ");
+    else if (relform->relpersistence == RELPERSISTENCE_TEMP)
+        appendStringInfoString(&buf, "TEMPORARY ");
+
+    appendStringInfoString(&buf, "TABLE ");
+
+    /* Add schema-qualified table name */
+	appendStringInfo(&buf, "%s.%s",
+					 quote_identifier(schemaname),
+					 quote_identifier(tablename));
+
+    /* Handle typed tables */
+    if (OidIsValid(relform->reloftype))
+    {
+        /* For typed tables, we don't need full column definitions,
+         * just any local columns or constraints */
+        bool has_local_columns = false;
+        char *typename = format_type_be(relform->reloftype);
+        appendStringInfo(&buf, " OF %s", typename);
+
+        /* Check if there are any local columns beyond the type */
+        for (i = 0; i < tupdesc->natts; i++)
+        {
+            Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+            if (attr->attisdropped || attr->attinhcount > 0)
+                continue;
+            has_local_columns = true;
+            break;
+        }
+
+        if (has_local_columns || (rel->rd_att->constr && rel->rd_att->constr->num_check > 0))
+        {
+            appendStringInfoString(&buf, "\n(\n");
+            first_col = true;
+
+            /* Add any local columns */
+            for (i = 0; i < tupdesc->natts; i++)
+            {
+                Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+
+                if (attr->attisdropped || attr->attinhcount > 0)
+                    continue;
+
+                if (!first_col)
+                    appendStringInfoString(&buf, ",\n");
+                first_col = false;
+
+                /* Only show local modifications/constraints for this column */
+                appendStringInfo(&buf, "    %s", quote_identifier(NameStr(attr->attname)));
+
+                if (attr->attnotnull)
+                    appendStringInfoString(&buf, " NOT NULL");
+
+                if (attr->atthasdef)
+                {
+                    AttrDefault *defval = NULL;
+
+                    if (rel->rd_att->constr && rel->rd_att->constr->defval)
+                    {
+                        for (int j = 0; j < rel->rd_att->constr->num_defval; j++)
+                        {
+                            if (rel->rd_att->constr->defval[j].adnum == attr->attnum)
+                            {
+                                defval = &rel->rd_att->constr->defval[j];
+                                break;
+                            }
+                        }
+                    }
+
+                    if (defval)
+                        appendStringInfo(&buf, " DEFAULT %s",
+										 text_to_cstring(pg_get_expr_worker(cstring_to_text(defval->adbin), relid, 0)));
+                }
+            }
+
+            /* Add CHECK constraints for typed tables */
+            if (rel->rd_att->constr && rel->rd_att->constr->num_check > 0)
+            {
+                for (i = 0; i < rel->rd_att->constr->num_check; i++)
+                {
+                    ConstrCheck *check = &rel->rd_att->constr->check[i];
+                    if (!first_col)
+                        appendStringInfoString(&buf, ",\n");
+                    first_col = false;
+                    appendStringInfo(&buf, "    CONSTRAINT %s CHECK (%s)",
+                                   quote_identifier(check->ccname),
+                                   text_to_cstring(pg_get_expr_worker(cstring_to_text(check->ccbin), relid, 0)));
+                }
+            }
+
+            appendStringInfoString(&buf, "\n)");
+        }
+    }
+    /* Handle partition tables - only show local columns if any */
+    else if (rel->rd_rel->relispartition)
+    {
+        /* For partitions, we typically don't show inherited columns,
+         * only local additions or modifications */
+        bool has_local_additions = false;
+
+        /* Check for any local columns or constraints */
+        for (i = 0; i < tupdesc->natts; i++)
+        {
+            Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+            if (attr->attisdropped)
+                continue;
+            /* Check if this is a local column (not inherited) */
+            if (attr->attinhcount == 0)
+            {
+                has_local_additions = true;
+                break;
+            }
+        }
+
+        if (has_local_additions || (rel->rd_att->constr && rel->rd_att->constr->num_check > 0))
+        {
+            appendStringInfoString(&buf, "\n(\n");
+            first_col = true;
+
+            /* Add local columns only */
+            for (i = 0; i < tupdesc->natts; i++)
+            {
+                Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+                char       *typename_with_typemod;
+
+                if (attr->attisdropped || attr->attinhcount > 0)
+                    continue;
+
+                if (!first_col)
+                    appendStringInfoString(&buf, ",\n");
+                first_col = false;
+
+                /* Full column definition for local columns */
+                appendStringInfo(&buf, "    %s", quote_identifier(NameStr(attr->attname)));
+
+                typename_with_typemod = format_type_with_typemod(attr->atttypid, attr->atttypmod);
+                appendStringInfo(&buf, " %s", typename_with_typemod);
+
+                if (attr->attnotnull)
+                    appendStringInfoString(&buf, " NOT NULL");
+
+                if (attr->atthasdef)
+                {
+                    AttrDefault *defval = NULL;
+
+                    if (rel->rd_att->constr && rel->rd_att->constr->defval)
+                    {
+                        for (int j = 0; j < rel->rd_att->constr->num_defval; j++)
+                        {
+                            if (rel->rd_att->constr->defval[j].adnum == attr->attnum)
+                            {
+                                defval = &rel->rd_att->constr->defval[j];
+                                break;
+                            }
+                        }
+                    }
+
+                    if (defval)
+                        appendStringInfo(&buf, " DEFAULT %s",
+										 text_to_cstring(pg_get_expr_worker(cstring_to_text(defval->adbin), relid, 0)));
+                }
+            }
+
+            /* Add local CHECK constraints */
+            if (rel->rd_att->constr && rel->rd_att->constr->num_check > 0)
+            {
+                for (i = 0; i < rel->rd_att->constr->num_check; i++)
+                {
+                    ConstrCheck *check = &rel->rd_att->constr->check[i];
+                    if (!first_col)
+                        appendStringInfoString(&buf, ",\n");
+                    first_col = false;
+                    appendStringInfo(&buf, "    CONSTRAINT %s CHECK (%s)",
+                                   quote_identifier(check->ccname),
+                                   text_to_cstring(pg_get_expr_worker(cstring_to_text(check->ccbin), relid, 0)));
+                }
+            }
+
+            appendStringInfoString(&buf, "\n)");
+        }
+    }
+    /* Handle regular tables and partitioned tables */
+    else
+    {
+        appendStringInfoString(&buf, "\n(\n");
+
+        /* Process each column */
+        for (i = 0; i < tupdesc->natts; i++)
+        {
+            Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+            char       *typename_with_typemod;
+            bool        notnull;
+            char        storage_type;
+
+            /* Skip dropped columns */
+            if (attr->attisdropped)
+                continue;
+
+            if (!first_col)
+                appendStringInfoString(&buf, ",\n");
+            first_col = false;
+
+            /* Column name */
+            appendStringInfo(&buf, "    %s", quote_identifier(NameStr(attr->attname)));
+
+            /* Data type with type modifiers */
+            typename_with_typemod = format_type_with_typemod(attr->atttypid, attr->atttypmod);
+            appendStringInfo(&buf, " %s", typename_with_typemod);
+
+            /* Collation */
+            if (OidIsValid(attr->attcollation))
+            {
+                HeapTuple   coll_tuple;
+                Form_pg_collation coll_form;
+
+                coll_tuple = SearchSysCache1(COLLOID, ObjectIdGetDatum(attr->attcollation));
+                if (HeapTupleIsValid(coll_tuple))
+                {
+                    /* Only show collation if it's not the default for the type */
+                    Oid default_collation = get_typcollation(attr->atttypid);
+
+                    coll_form = (Form_pg_collation) GETSTRUCT(coll_tuple);
+
+                    if (attr->attcollation != default_collation)
+                    {
+                        char *coll_namespace = get_namespace_name(coll_form->collnamespace);
+                        if (coll_namespace && strcmp(coll_namespace, "pg_catalog") != 0)
+                            appendStringInfo(&buf, " COLLATE %s.%s",
+                                           quote_identifier(coll_namespace),
+                                           quote_identifier(NameStr(coll_form->collname)));
+                        else
+                            appendStringInfo(&buf, " COLLATE %s",
+                                           quote_identifier(NameStr(coll_form->collname)));
+                    }
+                    ReleaseSysCache(coll_tuple);
+                }
+            }
+
+            /* NOT NULL constraint */
+            notnull = attr->attnotnull;
+            if (notnull)
+                appendStringInfoString(&buf, " NOT NULL");
+
+            /* Default expression */
+            if (attr->atthasdef)
+            {
+                AttrDefault *defval = NULL;
+
+                if (rel->rd_att->constr && rel->rd_att->constr->defval)
+                {
+                    for (int j = 0; j < rel->rd_att->constr->num_defval; j++)
+                    {
+                        if (rel->rd_att->constr->defval[j].adnum == attr->attnum)
+                        {
+                            defval = &rel->rd_att->constr->defval[j];
+                            break;
+                        }
+                    }
+                }
+
+                if (defval)
+                {
+					appendStringInfo(&buf, " DEFAULT %s",
+									 text_to_cstring(pg_get_expr_worker(cstring_to_text(defval->adbin), relid, 0)));
+                }
+            }
+
+            /* Storage type */
+            storage_type = attr->attstorage;
+            if (storage_type != get_typstorage(attr->atttypid))
+            {
+                switch (storage_type)
+                {
+                    case 'p':
+                        appendStringInfoString(&buf, " STORAGE PLAIN");
+                        break;
+                    case 'e':
+                        appendStringInfoString(&buf, " STORAGE EXTERNAL");
+                        break;
+                    case 'm':
+                        appendStringInfoString(&buf, " STORAGE MAIN");
+                        break;
+                    case 'x':
+                        appendStringInfoString(&buf, " STORAGE EXTENDED");
+                        break;
+                }
+            }
+
+            /* Compression method (PostgreSQL 14+) */
+            if (attr->attcompression != InvalidCompressionMethod)
+            {
+                const char *compression_name = GetCompressionMethodName(attr->attcompression);
+                if (compression_name)
+                    appendStringInfo(&buf, " COMPRESSION %s", compression_name);
+            }
+        }
+
+        /* Add table constraints (PRIMARY KEY, UNIQUE, CHECK, etc.) */
+        if (rel->rd_att->constr && rel->rd_att->constr->num_check > 0)
+        {
+            for (i = 0; i < rel->rd_att->constr->num_check; i++)
+            {
+                ConstrCheck *check = &rel->rd_att->constr->check[i];
+                appendStringInfo(&buf, ",\n    CONSTRAINT %s CHECK (%s)",
+                               quote_identifier(check->ccname),
+                               text_to_cstring(pg_get_expr_worker(cstring_to_text(check->ccbin), relid, 0)));
+            }
+        }
+
+        /* Add indexes as constraints (PRIMARY KEY, UNIQUE) */
+        {
+            List       *indexoidlist = RelationGetIndexList(rel);
+            ListCell   *l;
+
+            foreach(l, indexoidlist)
+            {
+                Oid         indexoid = lfirst_oid(l);
+                Relation    indexrel;
+                Form_pg_index indexform;
+                HeapTuple   indexTuple;
+
+                indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
+                if (!HeapTupleIsValid(indexTuple))
+                    continue;
+
+                indexform = (Form_pg_index) GETSTRUCT(indexTuple);
+
+                if (indexform->indisprimary || indexform->indisunique)
+                {
+                    indexrel = relation_open(indexoid, AccessShareLock);
+
+                    if (indexform->indisprimary)
+                        appendStringInfoString(&buf, ",\n    PRIMARY KEY (");
+                    else
+                        appendStringInfoString(&buf, ",\n    UNIQUE (");
+
+                    /* Add index column names */
+                    for (int j = 0; j < indexform->indnatts; j++)
+                    {
+                        int16 attnum = indexform->indkey.values[j];
+                        char *attname = get_attname(relid, attnum, false);
+
+                        if (j > 0)
+                            appendStringInfoString(&buf, ", ");
+                        appendStringInfo(&buf, "%s", quote_identifier(attname));
+                    }
+                    appendStringInfoString(&buf, ")");
+
+                    relation_close(indexrel, AccessShareLock);
+                }
+
+                ReleaseSysCache(indexTuple);
+            }
+
+            list_free(indexoidlist);
+        }
+
+        appendStringInfoString(&buf, "\n)");
+    }
+
+    /* Add INHERITS clause for inheritance (not partitioning) */
+    if (rel->rd_rel->relhassubclass == false && rel->rd_rel->relispartition == false)
+    {
+        Relation    catalogrel;
+        SysScanDesc scan;
+        ScanKeyData key;
+        HeapTuple   inheritsTuple;
+        bool        first_parent = true;
+
+        catalogrel = table_open(InheritsRelationId, AccessShareLock);
+
+        ScanKeyInit(&key,
+                    Anum_pg_inherits_inhrelid,
+                    BTEqualStrategyNumber, F_OIDEQ,
+                    ObjectIdGetDatum(relid));
+
+        scan = systable_beginscan(catalogrel, InheritsRelidSeqnoIndexId,
+                                  true, NULL, 1, &key);
+
+        while (HeapTupleIsValid(inheritsTuple = systable_getnext(scan)))
+        {
+            Form_pg_inherits inh = (Form_pg_inherits) GETSTRUCT(inheritsTuple);
+            char *parent_name;
+            char *parent_schema;
+
+            if (first_parent)
+            {
+                appendStringInfoString(&buf, " INHERITS (");
+                first_parent = false;
+            }
+            else
+                appendStringInfoString(&buf, ", ");
+
+            parent_name = get_rel_name(inh->inhparent);
+            parent_schema = get_namespace_name(get_rel_namespace(inh->inhparent));
+
+            if (parent_schema && strcmp(parent_schema, "public") != 0)
+                appendStringInfo(&buf, "%s.%s",
+                               quote_identifier(parent_schema),
+                               quote_identifier(parent_name));
+            else
+                appendStringInfo(&buf, "%s", quote_identifier(parent_name));
+        }
+
+        if (!first_parent)
+            appendStringInfoString(&buf, ")");
+
+        systable_endscan(scan);
+        table_close(catalogrel, AccessShareLock);
+    }
+
+    /* Add PARTITION OF clause for partitioned tables */
+    if (rel->rd_rel->relispartition)
+    {
+        char *parent_name;
+        char *parent_schema;
+        Oid parent_oid = get_partition_parent(relid, false);
+
+        if (OidIsValid(parent_oid))
+        {
+            parent_name = get_rel_name(parent_oid);
+            parent_schema = get_namespace_name(get_rel_namespace(parent_oid));
+
+            appendStringInfoString(&buf, " PARTITION OF ");
+            if (parent_schema && strcmp(parent_schema, "public") != 0)
+                appendStringInfo(&buf, "%s.%s",
+                               quote_identifier(parent_schema),
+                               quote_identifier(parent_name));
+            else
+                appendStringInfo(&buf, "%s", quote_identifier(parent_name));
+
+            /* Add partition bounds */
+            if (rel->rd_partkey)
+            {
+                Datum partition_bound_datum;
+                char *partition_bound;
+
+                /* Use DirectFunctionCall1 to call pg_get_partition_constraintdef */
+                partition_bound_datum = DirectFunctionCall1(pg_get_partition_constraintdef,
+                                                          ObjectIdGetDatum(relid));
+
+                if (DatumGetPointer(partition_bound_datum) != NULL)
+                {
+                    partition_bound = TextDatumGetCString(partition_bound_datum);
+                    if (partition_bound && strlen(partition_bound) > 0)
+                        appendStringInfo(&buf, " %s", partition_bound);
+                }
+            }
+        }
+    }
+
+    /* Add WITH options */
+    {
+        bool        first_option = true;
+
+        /* Fill factor - use RelationGetFillFactor */
+        if (relform->relkind == RELKIND_RELATION)
+        {
+            int fillfactor = RelationGetFillFactor(rel, HEAP_DEFAULT_FILLFACTOR);
+            if (fillfactor != HEAP_DEFAULT_FILLFACTOR)
+            {
+                if (first_option)
+                {
+                    appendStringInfoString(&buf, " WITH (");
+                    first_option = false;
+                }
+                else
+                    appendStringInfoString(&buf, ", ");
+
+                appendStringInfo(&buf, "fillfactor=%d", fillfactor);
+            }
+        }
+
+        /* Toast tuple target */
+        if (relform->reltoastrelid != InvalidOid)
+        {
+            Relation toast_rel = relation_open(relform->reltoastrelid, AccessShareLock);
+            if (toast_rel->rd_options)
+            {
+                StdRdOptions *toast_options = (StdRdOptions *) toast_rel->rd_options;
+
+				/* XXX check if this is the right test */
+                if (toast_options->toast_tuple_target != TOAST_TUPLE_TARGET)
+                {
+                    if (first_option)
+                    {
+                        appendStringInfoString(&buf, " WITH (");
+                        first_option = false;
+                    }
+                    else
+                        appendStringInfoString(&buf, ", ");
+
+                    appendStringInfo(&buf, "toast_tuple_target=%d",
+                                   toast_options->toast_tuple_target);
+                }
+            }
+            relation_close(toast_rel, AccessShareLock);
+        }
+
+        if (!first_option)
+            appendStringInfoString(&buf, ")");
+    }
+
+    /* Add tablespace */
+    if (OidIsValid(relform->reltablespace))
+    {
+        tablespacename = get_tablespace_name(relform->reltablespace);
+        if (tablespacename)
+            appendStringInfo(&buf, " TABLESPACE %s", quote_identifier(tablespacename));
+    }
+
+    /* Add ON COMMIT clause for temporary tables */
+    if (relform->relpersistence == RELPERSISTENCE_TEMP)
+    {
+        /* Get ON COMMIT from local oncommits structure */
+        OnCommitAction  oncommit = get_on_commit_action(relid);
+
+        /* Only add ON COMMIT clause if we successfully determined the behavior */
+        switch (oncommit)
+        {
+            case ONCOMMIT_DELETE_ROWS:
+                appendStringInfoString(&buf, " ON COMMIT DELETE ROWS");
+                break;
+            case ONCOMMIT_PRESERVE_ROWS:
+                appendStringInfoString(&buf, " ON COMMIT PRESERVE ROWS");
+                break;
+            case ONCOMMIT_DROP:
+                appendStringInfoString(&buf, " ON COMMIT DROP");
+                break;
+            case ONCOMMIT_NOOP:
+            default:
+                /* Don't add anything for default behavior */
+                break;
+        }
+    }
+
+    /* Close the relation */
+    relation_close(rel, AccessShareLock);
+
+    PG_RETURN_TEXT_P(cstring_to_text(buf.data));
+}
+
+/*
+ * Add this to the fmgr table in src/include/catalog/pg_proc.dat:
+ *
+ * { oid => '8888', descr => 'show CREATE TABLE command for table',
+ *   proname => 'pg_get_table_ddl', prorettype => 'text',
+ *   proargtypes => 'regclass', prosrc => 'pg_get_table_ddl' },
+ *
+ * And add this to src/include/utils/builtins.h:
+ * extern Datum pg_get_table_ddl(PG_FUNCTION_ARGS);
+ */

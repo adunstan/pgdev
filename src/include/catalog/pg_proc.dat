@@ -12575,5 +12575,7 @@
   proargmodes => '{o,o,o,o,o,o,o,o,o,o,o,o,o,o,o}',
   proargnames => '{pid,io_id,io_generation,state,operation,off,length,target,handle_data_len,raw_result,result,target_desc,f_sync,f_localmem,f_buffered}',
   prosrc => 'pg_get_aios' },
-
+{ oid => '8888', descr => 'show CREATE TABLE command for table',
+  proname => 'pg_get_table_ddl', prorettype => 'text',
+  proargtypes => 'regclass', prosrc => 'pg_get_table_ddl' },
 ]
