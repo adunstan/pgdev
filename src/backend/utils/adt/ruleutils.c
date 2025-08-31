@@ -30,6 +30,7 @@
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_depend.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_partitioned_table.h"
@@ -13706,4 +13707,49 @@ get_range_partbound_string(List *bound_datums)
 	appendStringInfoChar(buf, ')');
 
 	return buf->data;
+}
+
+/*
+ * pg_get_schema_ddl - Get CREATE SCHEMA statement for a schema
+ */
+Datum
+pg_get_schema_ddl(PG_FUNCTION_ARGS)
+{
+	Oid			schemaoid = PG_GETARG_OID(0);
+	HeapTuple	tuple;
+	Form_pg_namespace nspForm;
+	char	   *nspname;
+	char	   *nspowner;
+	StringInfoData buf;
+
+	/* Look up the schema in pg_namespace */
+	tuple = SearchSysCache1(NAMESPACEOID, ObjectIdGetDatum(schemaoid));
+
+	/* Function param is a regnamespace, so schemaoid must be valid */
+	Assert(HeapTupleIsValid(tuple));
+
+	nspForm = (Form_pg_namespace) GETSTRUCT(tuple);
+	nspname = NameStr(nspForm->nspname);
+
+	initStringInfo(&buf);
+
+	/* Build the CREATE SCHEMA statement */
+	appendStringInfo(&buf, "CREATE SCHEMA %s",
+					 quote_identifier(nspname));
+
+	/* Add AUTHORIZATION clause if owner is not current user */
+	if (GetUserId() != nspForm->nspowner)
+	{
+		/* Get the owner name */
+		nspowner = GetUserNameFromId(nspForm->nspowner, false);
+
+		appendStringInfo(&buf, " AUTHORIZATION %s",
+						 quote_identifier(nspowner));
+	}
+
+	appendStringInfoChar(&buf, ';');
+
+	ReleaseSysCache(tuple);
+
+	PG_RETURN_TEXT_P(string_to_text(buf.data));
 }
