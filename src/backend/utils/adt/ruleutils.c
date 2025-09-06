@@ -13779,9 +13779,13 @@ pg_get_table_ddl(PG_FUNCTION_ARGS)
     appendStringInfoString(&buf, "TABLE ");
 
     /* Add schema-qualified table name */
-	appendStringInfo(&buf, "%s.%s",
-					 quote_identifier(schemaname),
-					 quote_identifier(tablename));
+	if (relform->relpersistence == RELPERSISTENCE_TEMP)
+		appendStringInfo(&buf, "%s",
+						 quote_identifier(tablename));
+	else
+		appendStringInfo(&buf, "%s.%s",
+						 quote_identifier(schemaname),
+						 quote_identifier(tablename));
 
     /* Handle typed tables */
     if (OidIsValid(relform->reloftype))
@@ -14307,6 +14311,8 @@ pg_get_table_ddl(PG_FUNCTION_ARGS)
                 break;
         }
     }
+
+	appendStringInfoString(&buf, ";");
 
     /* Close the relation */
     relation_close(rel, AccessShareLock);

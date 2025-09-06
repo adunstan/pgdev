@@ -1,0 +1,19 @@
+create table foo (t text not null, i serial primary key, check (t > 'a'));
+create temp table bar (t text not null) on commit delete rows;
+\pset tuples_only
+\pset format unaligned
+select pg_get_table_ddl('foo');
+CREATE TABLE public.foo
+(
+    t text NOT NULL,
+    i integer NOT NULL DEFAULT nextval('foo_i_seq'::regclass),
+    CONSTRAINT foo_t_check CHECK ((t > 'a'::text)),
+    PRIMARY KEY (i)
+);
+select pg_get_table_ddl('bar');
+CREATE TEMPORARY TABLE bar
+(
+    t text NOT NULL
+) ON COMMIT DELETE ROWS;
+drop table foo;
+drop table bar;
