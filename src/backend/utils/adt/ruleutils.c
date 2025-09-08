@@ -13715,15 +13715,6 @@ get_range_partbound_string(List *bound_datums)
 }
 
 /*
- * pg_get_table_ddl - Generate CREATE TABLE DDL for a given relation
- *
- * This function should be added to src/backend/utils/adt/ruleutils.c
- */
-
-/* Function declaration for ruleutils.c */
-Datum pg_get_table_ddl(PG_FUNCTION_ARGS);
-
-/*
  * pg_get_table_ddl
  *
  * Returns the CREATE TABLE DDL statement for the specified table.
@@ -14193,38 +14184,99 @@ pg_get_table_ddl(PG_FUNCTION_ARGS)
         char *parent_name;
         char *parent_schema;
         Oid parent_oid = get_partition_parent(relid, false);
+		HeapTuple reltuple;
+		text *boundDatum;
 
+
+		/* Get pg_class.relpartbound */
+		reltuple = SearchSysCache1(RELOID,
+								   ObjectIdGetDatum(RelationGetRelid(rel)));
+		if (!HeapTupleIsValid(reltuple))
+			elog(ERROR, "cache lookup failed for relation %u", relid);
+
+
+		/* There must be a partition bound (XXX I think) */
+		boundDatum = DatumGetTextPP(SysCacheGetAttrNotNull(RELOID, reltuple,
+														   Anum_pg_class_relpartbound));
         if (OidIsValid(parent_oid))
         {
             parent_name = get_rel_name(parent_oid);
             parent_schema = get_namespace_name(get_rel_namespace(parent_oid));
 
             appendStringInfoString(&buf, " PARTITION OF ");
-            if (parent_schema && strcmp(parent_schema, "public") != 0)
-                appendStringInfo(&buf, "%s.%s",
-                               quote_identifier(parent_schema),
-                               quote_identifier(parent_name));
-            else
-                appendStringInfo(&buf, "%s", quote_identifier(parent_name));
+			appendStringInfo(&buf, "%s.%s",
+							 quote_identifier(parent_schema),
+							 quote_identifier(parent_name));
 
-            /* Add partition bounds */
-            if (rel->rd_partkey)
+			appendStringInfo(&buf, " %s", text_to_cstring(pg_get_expr_worker(boundDatum, relid, 0)));
+        }
+
+		ReleaseSysCache(reltuple);
+    }
+
+    /* Add PARTITION BY clause for partitioned tables */
+
+	/* XXX check if this handles all cases */
+
+    if (relform->relkind == RELKIND_PARTITIONED_TABLE)
+    {
+        PartitionKey partkey = RelationGetPartitionKey(rel);
+        char *parttype;
+
+        switch (partkey->strategy)
+        {
+            case PARTITION_STRATEGY_RANGE:
+                parttype = "RANGE";
+                break;
+            case PARTITION_STRATEGY_LIST:
+                parttype = "LIST";
+                break;
+            case PARTITION_STRATEGY_HASH:
+                parttype = "HASH";
+                break;
+            default:
+                parttype = "UNKNOWN";
+                break;
+        }
+
+        appendStringInfo(&buf, " PARTITION BY %s (", parttype);
+
+        /* Add partition key columns */
+        for (i = 0; i < partkey->partnatts; i++)
+        {
+            AttrNumber attnum = partkey->partattrs[i];
+            char *attname;
+
+            if (i > 0)
+                appendStringInfoString(&buf, ", ");
+
+            if (attnum > 0)
             {
-                Datum partition_bound_datum;
-                char *partition_bound;
+                /* Regular column */
+                attname = get_attname(relid, attnum, false);
+                appendStringInfo(&buf, "%s", quote_identifier(attname));
+            }
+            else
+            {
+                /* Expression */
+                Node *partexpr = list_nth(partkey->partexprs,
+                                        partkey->partattrs[i] - 1 - FirstLowInvalidHeapAttributeNumber);
+                char *exprstr = deparse_expression(partexpr,
+                                                 deparse_context_for(RelationGetRelationName(rel), relid),
+                                                 false, false);
+                appendStringInfo(&buf, "(%s)", exprstr);
+            }
 
-                /* Use DirectFunctionCall1 to call pg_get_partition_constraintdef */
-                partition_bound_datum = DirectFunctionCall1(pg_get_partition_constraintdef,
-                                                          ObjectIdGetDatum(relid));
-
-                if (DatumGetPointer(partition_bound_datum) != NULL)
-                {
-                    partition_bound = TextDatumGetCString(partition_bound_datum);
-                    if (partition_bound && strlen(partition_bound) > 0)
-                        appendStringInfo(&buf, " %s", partition_bound);
-                }
+            /* Add collation if specified */
+            if (OidIsValid(partkey->partcollation[i]))
+            {
+                char *collname = get_collation_name(partkey->partcollation[i]);
+                if (collname && strcmp(collname, "default") != 0)
+                    appendStringInfo(&buf, " COLLATE %s", quote_identifier(collname));
             }
         }
+
+        appendStringInfoString(&buf, ")");
     }
 
     /* Add WITH options */
@@ -14319,14 +14371,3 @@ pg_get_table_ddl(PG_FUNCTION_ARGS)
 
     PG_RETURN_TEXT_P(cstring_to_text(buf.data));
 }
-
-/*
- * Add this to the fmgr table in src/include/catalog/pg_proc.dat:
- *
- * { oid => '8888', descr => 'show CREATE TABLE command for table',
- *   proname => 'pg_get_table_ddl', prorettype => 'text',
- *   proargtypes => 'regclass', prosrc => 'pg_get_table_ddl' },
- *
- * And add this to src/include/utils/builtins.h:
- * extern Datum pg_get_table_ddl(PG_FUNCTION_ARGS);
- */
