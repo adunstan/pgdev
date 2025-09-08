@@ -19273,6 +19273,25 @@ remove_on_commit_action(Oid relid)
 }
 
 /*
+ * Return the ON COMMIT action set for a relation, or NOOP if none
+ * is registered
+*/
+OnCommitAction
+get_on_commit_action(Oid relid)
+{
+	ListCell   *l;
+
+	foreach(l, on_commits)
+	{
+		OnCommitItem *oc = (OnCommitItem *) lfirst(l);
+
+		if (oc->relid == relid)
+			return oc->oncommit;
+	}
+	return ONCOMMIT_NOOP;
+}
+
+/*
  * Perform ON COMMIT actions.
  *
  * This is invoked just before actually committing, since it's possible
