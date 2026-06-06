@@ -80,6 +80,18 @@ tests += {
       't/030_pager.pl',
     ],
   },
+  'pytest': {
+    'env': {'with_readline': readline.found() ? 'yes' : 'no'},
+    # 010_tab_completion and 030_pager drive psql through an interactive pty;
+    # they use pexpect via the interactive_psql fixture in pyt/conftest.py and
+    # skip when pexpect (or readline / a working "wc -l") is unavailable.
+    'tests': [
+      'pyt/test_001_basic.py',
+      'pyt/test_010_tab_completion.py',
+      'pyt/test_020_cancel.py',
+      'pyt/test_030_pager.py',
+    ],
+  },
 }
 
 subdir('po', if_found: libintl)
