@@ -73,6 +73,18 @@ tests += {
     'deps': [test_ext],
     'test_kwargs': {'priority': 40}, # pg_upgrade tests are slow
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_basic.py',
+      'pyt/test_002_pg_upgrade.py',
+      'pyt/test_003_logical_slots.py',
+      'pyt/test_004_subscription.py',
+      'pyt/test_005_char_signedness.py',
+      'pyt/test_006_transfer_modes.py',
+      'pyt/test_007_multixact_conversion.py',
+      'pyt/test_008_extension_control_path.py',
+    ],
+  },
 }
 
 subdir('po', if_found: libintl)
