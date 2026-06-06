@@ -3951,6 +3951,32 @@ install_suites = []
 
 testwrap = files('src/tools/testwrap')
 
+# Detect pytest for the Python-based test suite (src/test/pytest).  The suite
+# is optional: it is enabled when the 'pytest' feature is enabled, or (in the
+# default 'auto' mode) when a usable pytest is found.  We prefer a 'pytest'
+# program on PATH and fall back to "python -m pytest".
+pytest_enabled = false
+pytest_cmd = []
+pytest_pythonpath = meson.project_source_root() / 'src' / 'test' / 'pytest'
+pytestopt = get_option('pytest')
+if not pytestopt.disabled()
+  pytest_prog = find_program(get_option('PYTEST'), native: true, required: false)
+  if pytest_prog.found()
+    pytest_enabled = true
+    pytest_cmd = [pytest_prog.full_path()]
+  else
+    pytest_check = run_command(
+      python, '-m', 'pytest', '--version', check: false)
+    if pytest_check.returncode() == 0
+      pytest_enabled = true
+      pytest_cmd = [python.full_path(), '-m', 'pytest']
+    endif
+  endif
+  if not pytest_enabled and pytestopt.enabled()
+    error('pytest not found')
+  endif
+endif
+
 foreach test_dir : tests
   testwrap_base = [
     testwrap,
@@ -4114,6 +4140,56 @@ foreach test_dir : tests
             '--testname', onetap_p,
             '--', test_command,
             test_dir['sd'] / onetap,
+          ],
+        )
+      endforeach
+      install_suites += test_group
+    elif kind == 'pytest'
+      testwrap_pytest = testwrap_base
+      if not pytest_enabled
+        testwrap_pytest += ['--skip', 'pytest not enabled']
+      endif
+
+      # Make the in-tree libpq/ and pypg/ packages importable, and put the
+      # temporary install (and per-directory build outputs) on PATH so client
+      # programs and pg_config resolve there.  The 'test' subdir mirrors the
+      # tap branch: some dirs (e.g. libpq) build their test client programs
+      # into <bd>/test.
+      env = test_env
+      env.prepend('PATH', temp_install_bindir, test_dir['bd'], test_dir['bd'] / 'test')
+      env.prepend('PYTHONPATH', pytest_pythonpath)
+
+      foreach name, value : t.get('env', {})
+        env.set(name, value)
+      endforeach
+
+      test_group = test_dir['name']
+      test_kwargs = {
+        'protocol': 'tap',
+        'suite': test_group,
+        'timeout': 1000,
+        'depends': test_deps + t.get('deps', []),
+        'env': env,
+      } + t.get('test_kwargs', {})
+
+      foreach onepyt : t['tests']
+        # Make pytest test names prettier: drop pyt/ and .py
+        onepyt_p = onepyt
+        if onepyt_p.startswith('pyt/')
+          onepyt_p = onepyt.split('pyt/')[1]
+        endif
+        if onepyt_p.endswith('.py')
+          onepyt_p = fs.stem(onepyt_p)
+        endif
+
+        test(test_dir['name'] / onepyt_p,
+          python,
+          kwargs: test_kwargs,
+          args: testwrap_pytest + [
+            '--testgroup', test_dir['name'],
+            '--testname', onepyt_p,
+            '--', pytest_cmd,
+            test_dir['sd'] / onepyt,
           ],
         )
       endforeach
