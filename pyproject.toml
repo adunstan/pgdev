@@ -1,0 +1,21 @@
+# Copyright (c) 2025-2026, PostgreSQL Global Development Group
+#
+# This file exists solely to configure pytest for the Python-based test suite
+# (see src/test/pytest).  Placing the configuration at the repository root
+# makes it the pytest "rootdir" config, so it applies to test files located
+# throughout the tree (e.g. src/bin/*/pyt, contrib/*/pyt) as well as the
+# infrastructure tests under src/test/pytest/pyt.
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+
+# Make the in-tree libpq/ and pypg/ packages importable from any test.
+pythonpath = ["src/test/pytest"]
+
+# Load the TAP-output plugin (pgtap) and the shared fixtures (pypg.fixtures).
+# Use importlib import mode so identically named test files in different
+# directories (e.g. many t/001_basic) do not collide.
+addopts = ["-p", "pgtap", "-p", "pypg.fixtures", "--import-mode=importlib"]
+
+# Tests live in pyt/ subdirectories using the test_*.py convention.
+python_files = ["test_*.py"]
