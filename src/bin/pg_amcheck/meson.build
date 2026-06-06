@@ -30,6 +30,15 @@ tests += {
       't/005_opclass_damage.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_basic.py',
+      'pyt/test_002_nonesuch.py',
+      'pyt/test_003_check.py',
+      'pyt/test_004_verify_heapam.py',
+      'pyt/test_005_opclass_damage.py',
+    ],
+  },
 }
 
 subdir('po', if_found: libintl)
