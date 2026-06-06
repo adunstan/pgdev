@@ -39,4 +39,10 @@ tests += {
       't/002_corrupt_vm.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_concurrent_transaction.py',
+      'pyt/test_002_corrupt_vm.py',
+    ],
+  },
 }

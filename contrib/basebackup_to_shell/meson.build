@@ -27,4 +27,11 @@ tests += {
     'env': {'GZIP_PROGRAM': gzip.found() ? gzip.full_path() : '',
             'TAR': tar.found() ? tar.full_path() : '' },
   },
+  'pytest': {
+    'env': {'GZIP_PROGRAM': gzip.found() ? gzip.full_path() : '',
+            'TAR': tar.found() ? tar.full_path() : '' },
+    'tests': [
+      'pyt/test_001_basic.py',
+    ],
+  },
 }
