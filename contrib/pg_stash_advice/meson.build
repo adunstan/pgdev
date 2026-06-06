@@ -40,4 +40,9 @@ tests += {
       't/001_persist.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_persist.py',
+    ],
+  },
 }

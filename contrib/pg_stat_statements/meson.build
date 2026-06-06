@@ -72,4 +72,9 @@ tests += {
       't/010_restart.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_010_restart.py',
+    ],
+  },
 }

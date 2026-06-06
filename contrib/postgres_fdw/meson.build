@@ -54,4 +54,10 @@ tests += {
       't/010_subscription.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_auth_scram.py',
+      'pyt/test_010_subscription.py',
+    ],
+  },
 }
