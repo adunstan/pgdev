@@ -169,6 +169,22 @@ tests += {
     },
     'deps': libpq_test_deps,
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_uri.py',
+      'pyt/test_002_api.py',
+      'pyt/test_003_load_balance_host_list.py',
+      'pyt/test_004_load_balance_dns.py',
+      'pyt/test_005_negotiate_encryption.py',
+      'pyt/test_006_service.py',
+    ],
+    'env': {
+      'with_ssl': ssl_library,
+      'with_gssapi': gssapi.found() ? 'yes' : 'no',
+      'with_krb_srvnam': 'postgres',
+    },
+    'deps': libpq_test_deps,
+  },
 }
 
 subdir('po', if_found: libintl)

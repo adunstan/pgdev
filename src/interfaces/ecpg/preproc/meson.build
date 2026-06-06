@@ -98,4 +98,11 @@ tests += {
     ],
     'deps': [ecpg_exe],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_ecpg_err_warn_msg.py',
+      'pyt/test_002_ecpg_err_warn_msg_informix.py',
+    ],
+    'deps': [ecpg_exe],
+  },
 }

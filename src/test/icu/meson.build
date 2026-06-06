@@ -10,4 +10,10 @@ tests += {
     ],
     'env': {'with_icu': icu.found() ? 'yes' : 'no'},
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_010_database.py',
+    ],
+    'env': {'with_icu': icu.found() ? 'yes' : 'no'},
+  },
 }
