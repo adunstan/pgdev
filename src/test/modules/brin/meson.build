@@ -15,4 +15,10 @@ tests += {
       't/02_wal_consistency.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_01_workitems.py',
+      'pyt/test_02_wal_consistency.py',
+    ],
+  },
 }
