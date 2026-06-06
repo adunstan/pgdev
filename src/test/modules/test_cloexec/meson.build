@@ -23,4 +23,9 @@ tests += {
       't/001_cloexec.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_cloexec.py',
+    ],
+  },
 }

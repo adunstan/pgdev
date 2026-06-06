@@ -34,4 +34,10 @@ tests += {
       't/002_worker_terminate.pl'
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_worker_spi.py',
+      'pyt/test_002_worker_terminate.py',
+    ],
+  },
 }

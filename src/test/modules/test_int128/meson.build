@@ -30,4 +30,9 @@ tests += {
     ],
     'deps': [test_int128],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_test_int128.py',
+    ],
+  },
 }

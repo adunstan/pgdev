@@ -12,4 +12,12 @@ tests += {
       't/004_negotiate.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_basic.py',
+      'pyt/test_002_connection_limits.py',
+      'pyt/test_003_start_stop.py',
+      'pyt/test_004_negotiate.py',
+    ],
+  },
 }

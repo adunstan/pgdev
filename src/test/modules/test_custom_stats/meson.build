@@ -52,4 +52,9 @@ tests += {
     ],
     'runningcheck': false,
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_custom_stats.py',
+    ],
+  },
 }
