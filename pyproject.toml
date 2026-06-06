@@ -1,0 +1,114 @@
+# Copyright (c) 2025-2026, PostgreSQL Global Development Group
+#
+# This file exists solely to configure pytest for the Python-based test suite
+# (see src/test/pytest).  Placing the configuration at the repository root
+# makes it the pytest "rootdir" config, so it applies to test files located
+# throughout the tree (e.g. src/bin/*/pyt, contrib/*/pyt) as well as the
+# infrastructure tests under src/test/pytest/pyt.
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+
+# Make the in-tree libpq/ and pypg/ packages importable from any test.
+pythonpath = ["src/test/pytest"]
+
+# Load the TAP-output plugin (pgtap) and the shared fixtures (pypg.fixtures).
+# Use importlib import mode so identically named test files in different
+# directories (e.g. many t/001_basic) do not collide.
+addopts = ["-p", "pgtap", "-p", "pypg.fixtures", "--import-mode=importlib"]
+
+# Tests live in pyt/ subdirectories using the test_*.py convention.
+python_files = ["test_*.py"]
+
+# ---------------------------------------------------------------------------
+# Code quality gates for the Python test suite (src/test/pytest and the pyt/
+# directories).  Run from the repository root, e.g.:
+#
+#     black --check src/test/pytest $(git ls-files '*/pyt/*.py')
+#     pylint src/test/pytest/libpq src/test/pytest/pypg src/test/pytest/pgtap.py
+#     mypy src/test/pytest
+#
+# These configure the tools only; installing them is a dev-only step (see the
+# dependency group in src/test/pytest/pyproject.toml).  They are never needed
+# to run the tests.
+
+[tool.black]
+# black's default line length; pylint is aligned to it below.
+line-length = 88
+
+[tool.mypy]
+# No explicit python_version: type-check against the dev interpreter.  The
+# suite leans on ctypes/libpq and third-party libs without stubs; be pragmatic
+# rather than strict, while still catching real type errors in our own code.
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+# Test trees have many same-named modules (conftest.py, test_*.py) that are
+# not importable packages; these settings let mypy map files to distinct
+# modules by path.
+namespace_packages = true
+explicit_package_bases = true
+
+[tool.pylint.main]
+# The suite's runtime floor (requires-python in src/test/pytest/pyproject.toml).
+py-version = "3.8"
+# Resolve the in-tree pypg/ and libpq/ packages (pytest puts this directory on
+# sys.path via the pythonpath setting above).
+source-roots = ["src/test/pytest"]
+
+[tool.pylint.basic]
+# Allow names that mirror the entities under test: node_A/node_B-style names
+# (multi-node tests label nodes A/B/C for readability) and ALL_CAPS for
+# function-local constants.
+good-names-rgxs = ["^[a-z_][a-z0-9_]*[A-Z]{0,2}$", "^[A-Z][A-Z0-9_]*$"]
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pylint."messages control"]
+# Curated relaxations for pytest/ctypes idioms (not bug-hiding).  The checks
+# that matter for a cross-platform suite (encoding, broad-except,
+# with-resources, real errors) stay enabled and are satisfied in code, not
+# silenced here.
+disable = [
+    "redefined-outer-name",      # pytest passes fixtures by name on purpose
+    "missing-module-docstring",
+    "missing-function-docstring",  # tests and plugin hooks self-describe
+    "too-few-public-methods",
+    "duplicate-code",            # parallel tests legitimately share shape
+    "import-outside-toplevel",   # required by the importorskip() pattern
+    "unused-argument",           # pytest hook/fixture signatures are fixed
+    "wrong-import-order",        # in-tree pypg/libpq misread as third-party
+    "fixme",                     # TODO/XXX are tracked intentionally
+    "use-dict-literal",          # dict(opt=...) reads well for conn options
+    "consider-using-f-string",
+    # Formatting is owned by black; the only lines it leaves over the limit
+    # are long string literals (SQL, log patterns, error messages) carried
+    # over verbatim from the tests these were ported from.  Splitting those
+    # strings would obscure the comparison with the originals.
+    "line-too-long",
+    # Size metrics: the test files are faithful ports of the corresponding
+    # Perl TAP tests, some of which are very large single scripts.  Splitting
+    # them up would hurt reviewability against the originals, so function
+    # size is managed by review rather than a hard threshold.
+    "too-many-statements",
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-lines",
+]
+
+[tool.pylint.design]
+# Advisory complexity metrics.  A server-management harness and a ctypes/error
+# wrapper are inherently "wide" (many attributes/args/branches); the Perl
+# equivalents are larger still.  Complexity is managed by review, not a hard
+# pylint threshold, so these refactor-nudges are relaxed rather than silenced
+# bug checks.
+max-args = 15
+max-positional-arguments = 10
+max-attributes = 15
+max-returns = 10
+# The server-management class mirrors the breadth of the Perl Cluster
+# harness, which has on the order of a hundred methods.
+max-public-methods = 60
