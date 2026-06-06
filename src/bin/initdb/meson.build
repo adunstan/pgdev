@@ -36,6 +36,11 @@ tests += {
       't/001_initdb.pl',
     ],
   },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_initdb.py',
+    ],
+  },
 }
 
 subdir('po', if_found: libintl)
