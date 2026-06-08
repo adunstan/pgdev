@@ -88,6 +88,7 @@ env:
     -Dplperl=enabled
     -Dplpython=enabled
     -Dpltcl=enabled
+    -Dpytest=enabled
     -Dreadline=enabled
     -Dssl=openssl
     -Dtap_tests=enabled
@@ -826,6 +827,7 @@ jobs:
         -Dldap=enabled
         -Dplperl=enabled
         -Dplpython=enabled
+        -Dpytest=enabled
         -Dssl=openssl
         -Dtap_tests=enabled
 
