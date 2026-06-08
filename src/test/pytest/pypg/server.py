@@ -36,8 +36,7 @@ class PostgresServer:
         self._sockdir = str(sockdir)
         # The connection host.  When listen_host is given (own_host), bind that
         # loopback address over TCP; combined with an explicit shared port this
-        # lets several nodes coexist, distinguished by IP, as
-        # PostgreSQL::Test::Cluster's own_host => 1 does.  Otherwise use the
+        # lets several nodes coexist, distinguished by IP.  Otherwise use the
         # socket directory with Unix-domain sockets, or 127.0.0.1 on TCP
         # (Windows).  Backslashes in a Windows socket path are converted to '/'
         # so the value is valid in postgresql.conf.
@@ -102,8 +101,7 @@ class PostgresServer:
         """postgresql.conf lines selecting the connection transport.
 
         Unix-domain sockets in this node's private directory, or TCP on the
-        loopback address (Windows, or any own_host node).  Mirrors
-        PostgreSQL::Test::Cluster.
+        loopback address (Windows, or any own_host node).
         """
         if self._own_host or not USE_UNIX_SOCKETS:
             return [
@@ -119,8 +117,8 @@ class PostgresServer:
         """Open and return a raw socket to the server, caller closes it.
 
         Connects to the Unix-domain socket (``<host>/.s.PGSQL.<port>``) or, on
-        TCP, to (host, port).  Mirrors PostgreSQL::Test::Cluster::raw_connect,
-        for tests that speak the wire protocol or just consume a connection.
+        TCP, to (host, port), for tests that speak the wire protocol directly
+        or just consume a connection.
         """
         if USE_UNIX_SOCKETS:
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -135,7 +133,6 @@ class PostgresServer:
 
         Always true on TCP.  With Unix-domain sockets it needs a working
         AF_UNIX implementation (absent on some Windows pythons); probe once.
-        Mirrors PostgreSQL::Test::Cluster::raw_connect_works.
         """
         if USE_UNIX_SOCKETS:
             if not hasattr(socket, "AF_UNIX"):
@@ -603,8 +600,14 @@ class PostgresServer:
             f"Waiting for replication conn {standby_name}'s {mode}_lsn to pass "
             f"{target_lsn} on {self.name}"
         )
+        # Aggregate with bool_and so the result is a single row even when more
+        # than one replication connection matches -- e.g. a logical subscriber
+        # named <standby_name> coexisting with a physical 'walreceiver'.  A
+        # per-row query would then return "t\nt", which never equals
+        # poll_query_until's expected "t", so the wait would spuriously time out
+        # even though every matching connection had caught up.
         query = (
-            f"SELECT '{target_lsn}' <= {mode}_lsn AND state = 'streaming' "
+            f"SELECT bool_and('{target_lsn}' <= {mode}_lsn AND state = 'streaming') "
             "FROM pg_catalog.pg_stat_replication "
             f"WHERE application_name IN ('{standby_name}', 'walreceiver')"
         )
