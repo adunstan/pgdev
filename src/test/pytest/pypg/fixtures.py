@@ -93,17 +93,15 @@ def create_pg(bindir, libdir, tmp_path):
 
     ``port`` pins an explicit port (otherwise a free one is chosen); ``own_host``
     binds the node to its own loopback address (127.0.0.1, .2, .3, ...) over
-    TCP, mirroring PostgreSQL::Test::Cluster's own_host.  Together they let
-    several nodes share one port, distinguished by IP -- needed for DNS-based
-    load-balancing tests.
+    TCP.  Together they let several nodes share one port, distinguished by IP
+    -- needed for DNS-based load-balancing tests.
 
     Data dirs live under the test's tmp_path; the unix socket lives in a short
     /tmp directory to stay within the socket path length limit.
     """
     servers = []
     sockdirs = []
-    # Per-test loopback-IP counter for own_host nodes (127.0.0.1, .2, .3, ...),
-    # like PostgreSQL::Test::Cluster's $last_host_assigned.
+    # Per-test loopback-IP counter for own_host nodes (127.0.0.1, .2, .3, ...).
     own_host_counter = [0]
 
     def _create(

@@ -326,7 +326,7 @@ GRANT regress_alice TO regress_admin;
     # is true) then a non-superuser must specify that password in the
     # connection string.  Below this rewrites pg_hba.conf with a "local"
     # (Unix-domain socket) rule, so the connection must come over a socket;
-    # skip it over TCP, matching the Perl test's "unless $use_unix_sockets".
+    # skip it over TCP.
     if not USE_UNIX_SOCKETS:
         return
 

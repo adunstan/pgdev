@@ -5,8 +5,7 @@
 These tests require Windows with TCP, so the module is skipped whenever the
 framework uses Unix-domain sockets -- i.e. on every non-Windows host, and on
 Windows when PG_TEST_USE_UNIX_SOCKETS is set.  That leaves it running only on
-Windows over TCP, matching the Perl test's ``!$windows_os || $use_unix_sockets``
-skip condition.
+Windows over TCP.
 """
 
 import pytest
