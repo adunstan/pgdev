@@ -3,10 +3,17 @@
 """Small file and polling helpers used by the test framework."""
 
 import os
+import sys
 import time
 
 # Default per-operation timeout in seconds (PG_TEST_TIMEOUT_DEFAULT, 180).
 TIMEOUT_DEFAULT = int(os.environ.get("PG_TEST_TIMEOUT_DEFAULT", "180"))
+
+# Connection transport, mirroring PostgreSQL::Test::Utils: use Unix-domain
+# sockets everywhere except Windows, where we listen on TCP (127.0.0.1).
+# PG_TEST_USE_UNIX_SOCKETS forces Unix sockets even on Windows, as in Perl.
+WINDOWS_OS = sys.platform in ("win32", "cygwin")
+USE_UNIX_SOCKETS = (not WINDOWS_OS) or ("PG_TEST_USE_UNIX_SOCKETS" in os.environ)
 
 
 def slurp_file(path, offset=0):

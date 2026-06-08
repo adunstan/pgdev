@@ -19,7 +19,7 @@ from libpq import ConnStatusType, Session
 from libpq.errors import ConnectionError as PqConnectionError
 
 from .command import CommandResult, PgBin
-from .util import TIMEOUT_DEFAULT, poll_until
+from .util import TIMEOUT_DEFAULT, USE_UNIX_SOCKETS, poll_until
 
 
 class PostgresServer:
@@ -31,8 +31,15 @@ class PostgresServer:
         self.libdir = str(libdir)
         self.basedir = str(basedir)
         self.port = int(port)
-        # Unix-socket-only: the host is the socket directory.
-        self.host = str(sockdir)
+        self._sockdir = str(sockdir)
+        # The connection host: the socket directory with Unix-domain sockets,
+        # or the loopback address when listening on TCP (Windows).  Mirrors
+        # PostgreSQL::Test::Cluster.  Backslashes in a Windows socket path are
+        # converted to '/' so the value is valid in postgresql.conf.
+        if USE_UNIX_SOCKETS:
+            self.host = self._sockdir.replace("\\", "/")
+        else:
+            self.host = "127.0.0.1"
         self._running = False
         self._sessions = {}
         self._logfile_generation = 0
@@ -82,6 +89,22 @@ class PostgresServer:
 
     def connstr(self, dbname="postgres"):
         return f"host='{self.host}' port={self.port} dbname='{dbname}'"
+
+    def _listen_conf_lines(self):
+        """postgresql.conf lines selecting the connection transport.
+
+        Unix-domain sockets in this node's private directory, or TCP on the
+        loopback address (Windows).  Mirrors PostgreSQL::Test::Cluster.
+        """
+        if USE_UNIX_SOCKETS:
+            return [
+                "listen_addresses = ''",
+                f"unix_socket_directories = '{self.host}'",
+            ]
+        return [
+            f"listen_addresses = '{self.host}'",
+            "unix_socket_directories = ''",
+        ]
 
     @property
     def pg_bin(self):
@@ -178,13 +201,9 @@ class PostgresServer:
         elif wal_level is not None:
             lines.append(f"wal_level = {wal_level}")
 
-        lines += [
-            f"port = {self.port}",
-            "listen_addresses = ''",
-            f"unix_socket_directories = '{self.host}'",
-            "fsync = off",
-            "",
-        ]
+        lines.append(f"port = {self.port}")
+        lines += self._listen_conf_lines()
+        lines += ["fsync = off", ""]
         self.append_conf("\n".join(lines))
 
         if has_archiving:
@@ -342,7 +361,7 @@ class PostgresServer:
         """Initialize this node's data dir from *root_node*'s named backup.
 
         Plain-format backups only; tar/incremental/tablespace variants are not
-        supported in this unix-socket-only framework.  Does not start the node.
+        supported by this framework.  Does not start the node.
 
         - ``has_streaming``: configure ``primary_conninfo`` pointing at
           *root_node* and place ``standby.signal`` (streaming replication).
@@ -374,13 +393,9 @@ class PostgresServer:
         # Base configuration for this node.
         self.append_conf(
             "\n".join(
-                [
-                    "",
-                    f"port = {self.port}",
-                    "listen_addresses = ''",
-                    f"unix_socket_directories = '{self.host}'",
-                    "",
-                ]
+                ["", f"port = {self.port}"]
+                + self._listen_conf_lines()
+                + [""]
             )
         )
 
