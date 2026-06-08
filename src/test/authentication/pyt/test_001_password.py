@@ -9,14 +9,21 @@ The following password methods are checked through this test:
 
 There's also a few tests of the log_connections GUC here.
 
-These tests require Unix-domain sockets; this framework is always
-Unix-socket-only, so no skip is needed.
+These tests require Unix-domain sockets, so the module is skipped when the
+framework is running over TCP (Windows).
 """
 
 import os
 import time
 
+import pytest
+
 from libpq import Session
+from pypg.util import USE_UNIX_SOCKETS
+
+pytestmark = pytest.mark.skipif(
+    not USE_UNIX_SOCKETS, reason="test requires Unix-domain sockets"
+)
 
 
 # Delete pg_hba.conf from the given node, add a new entry to it

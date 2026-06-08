@@ -2,8 +2,8 @@
 
 """Test password normalization in SCRAM.
 
-These tests can only run with Unix-domain sockets; this framework is always
-Unix-socket-only, so no skip is needed.
+These tests can only run with Unix-domain sockets, so the module is skipped
+when the framework is running over TCP (Windows).
 
 The passwords below contain non-ASCII characters, taken from the example
 strings of RFC4013.txt, Section "3. Examples".  They are byte-exact strings,
@@ -13,6 +13,14 @@ default).
 """
 
 import os
+
+import pytest
+
+from pypg.util import USE_UNIX_SOCKETS
+
+pytestmark = pytest.mark.skipif(
+    not USE_UNIX_SOCKETS, reason="test requires Unix-domain sockets"
+)
 
 
 # Delete pg_hba.conf from the given node, add a new entry to it

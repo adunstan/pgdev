@@ -2,24 +2,12 @@
 
 """Test postmaster start and stop state machine."""
 
-import os
-import socket
 import struct
+
+import pytest
 
 from libpq.errors import ConnectionError as PqConnectionError
 from pypg.util import TIMEOUT_DEFAULT
-
-
-def _raw_connect(node):
-    """Open a raw socket to the server's unix socket.
-
-    For the unix-socket-only framework, connects directly to
-    ``<host>/.s.PGSQL.<port>``.
-    """
-    path = os.path.join(node.host, f".s.PGSQL.{node.port}")
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.connect(path)
-    return sock
 
 
 def test_003_start_stop(create_pg):
@@ -55,13 +43,16 @@ def test_003_start_stop(create_pg):
     node.append_conf("trace_connection_negotiation=on")
     node.start()
 
+    if not node.raw_connect_works():
+        pytest.skip("this test requires working raw_connect()")
+
     raw_connections = []
 
     # Open a lot of TCP (or Unix domain socket) connections to use up all
     # the connection slots. Beyond a certain number (roughly 2x
     # max_connections), they will be "dead-end backends".
     for i in range(0, 21):
-        sock = _raw_connect(node)
+        sock = node.raw_connect()
 
         # On a busy system, the server might reject connections if postmaster
         # cannot accept() them fast enough. The exact limit and behavior
@@ -97,7 +88,7 @@ def test_003_start_stop(create_pg):
 
     # Open one more connection, to really ensure that we have at least one
     # dead-end backend.
-    sock = _raw_connect(node)
+    sock = node.raw_connect()
 
     # Test that the dead-end backends don't prevent the server from stopping.
     # Use pg_ctl directly so a short stop timeout can be enforced.

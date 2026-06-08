@@ -3,10 +3,10 @@
 """Test load balancing across the list of different hosts in the host
 parameter of the connection string.
 
-This framework uses the in-process libpq Session and a unix-socket-only
-cluster, so each node's "host" is its own socket directory and the nodes are
-still distinguished by listening on different ports.  We observe which node
-answered by checking the executed statement in each node's server log
+This framework uses the in-process libpq Session, so each node's "host" is its
+own socket directory (or the loopback address on TCP) and the nodes are still
+distinguished by listening on different ports.  We observe which node answered
+by checking the executed statement in each node's server log
 (log_statement = all) and counting log occurrences.
 """
 

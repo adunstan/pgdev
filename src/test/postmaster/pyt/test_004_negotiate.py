@@ -4,23 +4,9 @@
 both SSL and GSS requests to be rejected first, followed by more requests.
 """
 
-import os
-import socket
 import struct
 
 import pytest
-
-
-def _raw_connect(node):
-    """Open a raw socket to the server's unix socket.
-
-    For the unix-socket-only framework, connects directly to
-    ``<host>/.s.PGSQL.<port>``.
-    """
-    path = os.path.join(node.host, f".s.PGSQL.{node.port}")
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.connect(path)
-    return sock
 
 
 def test_negotiate(create_pg):
@@ -32,7 +18,10 @@ def test_negotiate(create_pg):
     node.append_conf("trace_connection_negotiation=on")
     node.start()
 
-    sock = _raw_connect(node)
+    if not node.raw_connect_works():
+        pytest.skip("this test requires working raw_connect()")
+
+    sock = node.raw_connect()
 
     # SSLRequest: packet length followed by NEGOTIATE_SSL_CODE.
     ssl_request = struct.pack("!Ihh", 8, 1234, 5679)

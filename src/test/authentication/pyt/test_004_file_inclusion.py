@@ -2,8 +2,8 @@
 
 """Tests for include directives in HBA and ident files.
 
-This test can only run with Unix-domain sockets; this framework is always
-Unix-socket-only, so no skip is needed.
+This test can only run with Unix-domain sockets, so the module is skipped when
+the framework is running over TCP (Windows).
 
 It is largely a data-driven test: include files and trees are written into the
 data directory, then the pg_hba_file_rules() and pg_ident_file_mappings()
@@ -12,6 +12,14 @@ view output as each entry is written.
 """
 
 import os
+
+import pytest
+
+from pypg.util import USE_UNIX_SOCKETS
+
+pytestmark = pytest.mark.skipif(
+    not USE_UNIX_SOCKETS, reason="test requires Unix-domain sockets"
+)
 
 
 # Stores the number of lines created for each file.  "hba_rule" and

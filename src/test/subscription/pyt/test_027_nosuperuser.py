@@ -5,6 +5,8 @@
 import os
 import re
 
+from pypg.util import USE_UNIX_SOCKETS
+
 publisher_connstr = None
 offset = 0
 
@@ -322,10 +324,12 @@ GRANT regress_alice TO regress_admin;
 
     # If the subscription connection requires a password ('password_required'
     # is true) then a non-superuser must specify that password in the
-    # connection string.
-    #
-    # This framework is unix-socket-only, so the unix-sockets guard is always
-    # satisfied; the test runs unconditionally.
+    # connection string.  Below this rewrites pg_hba.conf with a "local"
+    # (Unix-domain socket) rule, so the connection must come over a socket;
+    # skip it over TCP, matching the Perl test's "unless $use_unix_sockets".
+    if not USE_UNIX_SOCKETS:
+        return
+
     node_publisher1 = create_pg("publisher1", allows_streaming="logical")
     node_subscriber1 = create_pg("subscriber1")
     publisher_connstr1 = (

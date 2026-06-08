@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
 
@@ -105,6 +106,37 @@ class PostgresServer:
             f"listen_addresses = '{self.host}'",
             "unix_socket_directories = ''",
         ]
+
+    def raw_connect(self):
+        """Open and return a raw socket to the server, caller closes it.
+
+        Connects to the Unix-domain socket (``<host>/.s.PGSQL.<port>``) or, on
+        TCP, to (host, port).  Mirrors PostgreSQL::Test::Cluster::raw_connect,
+        for tests that speak the wire protocol or just consume a connection.
+        """
+        if USE_UNIX_SOCKETS:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.connect(os.path.join(self.host, f".s.PGSQL.{self.port}"))
+        else:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((self.host, self.port))
+        return sock
+
+    def raw_connect_works(self):
+        """Whether :meth:`raw_connect` is usable on this platform.
+
+        Always true on TCP.  With Unix-domain sockets it needs a working
+        AF_UNIX implementation (absent on some Windows pythons); probe once.
+        Mirrors PostgreSQL::Test::Cluster::raw_connect_works.
+        """
+        if USE_UNIX_SOCKETS:
+            if not hasattr(socket, "AF_UNIX"):
+                return False
+            try:
+                self.raw_connect().close()
+            except OSError:
+                return False
+        return True
 
     @property
     def pg_bin(self):

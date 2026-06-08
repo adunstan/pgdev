@@ -2,10 +2,9 @@
 
 """Tests for peer authentication and user name map.
 
-The test is skipped if the platform does not support peer authentication, and
-is only able to run with Unix-domain sockets.  This framework is always
-Unix-socket-only, so no skip is needed for that.  The peer-auth platform skip
-is applied here.
+Peer authentication only works over Unix-domain sockets, so the module is
+skipped when the framework is running over TCP (Windows); it is also skipped
+if the platform does not support peer authentication (checked at run time).
 """
 
 import getpass
@@ -13,6 +12,12 @@ import os
 import re
 
 import pytest
+
+from pypg.util import USE_UNIX_SOCKETS
+
+pytestmark = pytest.mark.skipif(
+    not USE_UNIX_SOCKETS, reason="test requires Unix-domain sockets"
+)
 
 
 # Delete pg_hba.conf from the given node, add a new entry to it

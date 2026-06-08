@@ -449,8 +449,8 @@ def _run_body(create_pg, tempdir):
     #
     # FRAMEWORK GAP: PostgresServer.init_from_backup only supports plain-format
     # backups (tar_program / tablespace_map variants are explicitly
-    # unsupported in this unix-socket-only framework), so the restore-and-query
-    # sub-check is skipped here.
+    # unsupported by this framework), so the restore-and-query sub-check is
+    # skipped here.
 
     # Create an unlogged table to test that forks other than init are not
     # copied.

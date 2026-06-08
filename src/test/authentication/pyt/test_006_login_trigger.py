@@ -10,9 +10,17 @@ safe_sql, while every post-enable check uses connect_ok, which opens a fresh
 libpq connection (firing the login trigger each time) and captures the
 connection-time NOTICE on stderr.
 
-These tests require Unix-domain sockets; this framework is always
-Unix-socket-only, so no skip is needed.
+These tests require Unix-domain sockets, so the module is skipped when the
+framework is running over TCP (Windows).
 """
+
+import pytest
+
+from pypg.util import USE_UNIX_SOCKETS
+
+pytestmark = pytest.mark.skipif(
+    not USE_UNIX_SOCKETS, reason="test requires Unix-domain sockets"
+)
 
 
 def test_006_login_trigger(create_pg):

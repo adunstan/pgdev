@@ -2,23 +2,24 @@
 
 """Tests targeting SSPI on Windows.
 
-These tests require Windows (without PG_TEST_USE_UNIX_SOCKETS).  This framework
-is always Unix-socket-only and this host is not Windows, so the test skips
-cleanly here.  The test body below the skip is included for completeness.
+These tests require Windows with TCP, so the module is skipped whenever the
+framework uses Unix-domain sockets -- i.e. on every non-Windows host, and on
+Windows when PG_TEST_USE_UNIX_SOCKETS is set.  That leaves it running only on
+Windows over TCP, matching the Perl test's ``!$windows_os || $use_unix_sockets``
+skip condition.
 """
-
-import sys
 
 import pytest
 
+from pypg.util import USE_UNIX_SOCKETS
+
+pytestmark = pytest.mark.skipif(
+    USE_UNIX_SOCKETS,
+    reason="SSPI tests require Windows (without PG_TEST_USE_UNIX_SOCKETS)",
+)
+
 
 def test_005_sspi(create_pg):
-    # SSPI tests require Windows (without PG_TEST_USE_UNIX_SOCKETS).
-    if sys.platform != "win32":
-        pytest.skip(
-            "SSPI tests require Windows (without PG_TEST_USE_UNIX_SOCKETS)"
-        )
-
     # Initialize primary node
     node = create_pg("primary", start=False)
     node.append_conf("log_connections = authentication\n")

@@ -7,7 +7,8 @@ def test_036_sequences(create_pg):
     # Initialize publisher node
     #
     # No extra authentication setup is needed to allow connections from
-    # regress_seq_repl: this framework is UNIX-socket-only with trust auth.
+    # regress_seq_repl: the framework initdb's with trust auth, which covers
+    # both the local socket and loopback TCP.
     node_publisher = create_pg("publisher", allows_streaming="logical")
 
     # Initialize subscriber node

@@ -4,24 +4,12 @@
 superuser_reserved_connections.
 """
 
-import os
 import re
-import socket
 import struct
 
+import pytest
+
 from libpq.errors import ConnectionError as PqConnectionError
-
-
-def _raw_connect(node):
-    """Open a raw socket to the server's unix socket.
-
-    For the unix-socket-only framework, connects directly to
-    ``<host>/.s.PGSQL.<port>``.
-    """
-    path = os.path.join(node.host, f".s.PGSQL.{node.port}")
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.connect(path)
-    return sock
 
 
 def _session_as_user(node, user):
@@ -69,6 +57,9 @@ def test_002_connection_limits(create_pg):
     )
     node.append_conf("log_min_messages=debug2")
     node.start()
+
+    if not node.raw_connect_works():
+        pytest.skip("this test requires working raw_connect()")
 
     node.safe_sql("CREATE USER regress_regular LOGIN")
     node.safe_sql("CREATE USER regress_reserved LOGIN")
@@ -125,7 +116,7 @@ def test_002_connection_limits(create_pg):
     # certain number (roughly 2x max_connections), they will be "dead-end
     # backends".
     for i in range(0, 21):
-        sock = _raw_connect(node)
+        sock = node.raw_connect()
 
         # On a busy system, the server might reject connections if postmaster
         # cannot accept() them fast enough. To make this reliable, we attempt
