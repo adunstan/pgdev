@@ -600,16 +600,22 @@ class PostgresServer:
             f"Waiting for replication conn {standby_name}'s {mode}_lsn to pass "
             f"{target_lsn} on {self.name}"
         )
-        # Aggregate with bool_and so the result is a single row even when more
-        # than one replication connection matches -- e.g. a logical subscriber
-        # named <standby_name> coexisting with a physical 'walreceiver'.  A
-        # per-row query would then return "t\nt", which never equals
-        # poll_query_until's expected "t", so the wait would spuriously time out
-        # even though every matching connection had caught up.
+        # Match the connection whose application_name is *standby_name*.
+        # Standbys with a tool-generated primary_conninfo (pg_rewind /
+        # pg_basebackup --write-recovery-conf) connect without setting
+        # application_name and so report 'walreceiver'; fall back to that, but
+        # only when no connection with the requested name exists.  Otherwise an
+        # unrelated 'walreceiver' connection (e.g. a physical standby running
+        # alongside a named logical subscriber) would also match, and the
+        # per-row query would return more than one row, which
+        # poll_query_until's single-"t" comparison never satisfies.
         query = (
-            f"SELECT bool_and('{target_lsn}' <= {mode}_lsn AND state = 'streaming') "
+            f"SELECT '{target_lsn}' <= {mode}_lsn AND state = 'streaming' "
             "FROM pg_catalog.pg_stat_replication "
-            f"WHERE application_name IN ('{standby_name}', 'walreceiver')"
+            f"WHERE application_name = '{standby_name}' "
+            "   OR (application_name = 'walreceiver' "
+            "       AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_replication "
+            f"                      WHERE application_name = '{standby_name}'))"
         )
         if not self.poll_query_until(query):
             details = self.safe_sql(

@@ -150,10 +150,12 @@ class RewindTest:
         self.node_standby.init_from_backup(self.node_primary, "my_backup")
 
         # Build primary_conninfo without nested single quotes (the value is
-        # itself single-quoted in postgresql.conf).
+        # itself single-quoted in postgresql.conf).  application_name is set to
+        # the standby's node name so wait_for_catchup can locate it in
+        # pg_stat_replication.
         connstr_primary = (
             f"host={self.node_primary.host} port={self.node_primary.port} "
-            "dbname=postgres"
+            f"dbname=postgres application_name={self.node_standby.name}"
         )
         self.node_standby.append_conf(
             f"\nprimary_conninfo='{connstr_primary}'\n"
