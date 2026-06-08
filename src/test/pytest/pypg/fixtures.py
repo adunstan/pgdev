@@ -10,6 +10,7 @@ automatically at the end of the test.
 
 import os
 import pathlib
+import re
 import shutil
 import socket
 import subprocess
@@ -75,18 +76,25 @@ def pg_bin(bindir):
 
 
 @pytest.fixture
-def test_datadir(tmp_path):
+def test_datadir(request, tmp_path):
     """The per-test directory for servers and other test data.
 
-    Under the meson/testwrap harness this is the per-test TESTDATADIR (as
-    PostgreSQL::Test::Utils uses for tmp_check); for a standalone pytest run it
-    falls back to pytest's tmp_path.  Using the per-test directory rather than
-    pytest's shared pytest-of-<user> base matters because that shared base is
+    Under the meson/testwrap harness this is rooted at the per-file TESTDATADIR
+    (as PostgreSQL::Test::Utils uses for tmp_check); for a standalone pytest run
+    it falls back to pytest's tmp_path.  Using TESTDATADIR rather than pytest's
+    shared pytest-of-<user> base matters because that shared base is
     concurrently created and rotated by parallel test processes, which makes
     directory creation (e.g. by initdb) race -- on Windows it fails outright.
+
+    TESTDATADIR is shared by every test function in a file, so append a
+    per-function subdirectory (as tmp_path is per-function) to keep functions
+    from colliding on the same data directory.
     """
     root = os.environ.get("TESTDATADIR")
-    path = pathlib.Path(root) if root else tmp_path
+    if not root:
+        return tmp_path
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", request.node.name)
+    path = pathlib.Path(root) / safe
     path.mkdir(parents=True, exist_ok=True)
     return path
 
