@@ -24,13 +24,14 @@ CI we set up the previously mentioned rules in the hosts file, so that this load
 balancing method is tested.
 
 NOTE (framework gap): this test is gated behind PG_TEST_EXTRA=load_balance, the
-special /etc/hosts entries above, and a Linux/Windows host, so it always skips
-in this environment.  More importantly, the pytest framework's PostgresServer
-is unix-socket-only: init() always writes listen_addresses = '' and serves over
-a unix socket, with no machinery to bind each node to a distinct 127.0.0.x
-address.  Real execution of this test therefore requires framework support for
-(a) TCP listen_addresses and (b) per-node binding to 127.0.0.1/2/3 -- see the
-inline comments in the test body.
+special /etc/hosts entries above, and a Linux/Windows host.  Even with all of
+those satisfied it still skips, because the scenario needs all three nodes
+bound to distinct loopback addresses (127.0.0.1/2/3) on the *same* TCP port so
+the single DNS name selects between them.  PostgresServer can now listen on TCP
+(on Windows), but it still has no "own_host" machinery to bind each node to a
+chosen 127.0.0.x address -- each node gets one host on its own free port.  Real
+execution therefore awaits framework support for per-node binding to distinct
+loopback IPs -- see the inline comments in the test body.
 """
 
 import os
@@ -77,8 +78,8 @@ def _skip_reason():
 
     # Even with the hosts file in place, this test needs all three nodes bound
     # to distinct loopback addresses (127.0.0.1/2/3) on the *same* TCP port so
-    # the single DNS name selects between them.  The pytest PostgresServer
-    # framework serves each node on its own unix socket and its own free port,
+    # the single DNS name selects between them.  PostgresServer gives each node
+    # a single host (a socket dir, or 127.0.0.1 on TCP) on its own free port,
     # with no machinery to bind each node to a distinct loopback IP, so the
     # scenario cannot be reproduced here.
     return ("DNS load balancing needs per-node TCP binding to distinct "
