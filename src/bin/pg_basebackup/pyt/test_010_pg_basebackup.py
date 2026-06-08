@@ -131,11 +131,15 @@ def _run_body(create_pg, tempdir):
         "failure on incorrect separator to define compression level")
 
     # Write a file with a non-UTF8 name to test backup of such files.  Some
-    # Windows ANSI code pages may reject this filename; on POSIX it is fine.
+    # filesystems (macOS, and some Windows ANSI code pages) reject this
+    # filename, in which case we quietly proceed without this bit of coverage.
     os.makedirs(f"{tempdir}/pgdata", exist_ok=True)
-    with open(os.path.join(tempdir.encode(), b"pgdata",
-                           b"FOO\xe0\xe0\xe0BAR"), "ab") as fh:
-        fh.write(b"test backup of file with non-UTF8 name\n")
+    badname = os.path.join(tempdir.encode(), b"pgdata", b"FOO\xe0\xe0\xe0BAR")
+    try:
+        with open(badname, "ab") as fh:
+            fh.write(b"test backup of file with non-UTF8 name\n")
+    except OSError:
+        pass
 
     # set_replication_conf / reload: the default trust pg_hba already permits
     # local replication, so no pg_hba change is needed for unix sockets.

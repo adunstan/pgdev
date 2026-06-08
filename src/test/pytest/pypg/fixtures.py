@@ -152,6 +152,21 @@ def create_pg(bindir, libdir, tmp_path):
 
 
 @pytest.fixture
+def tempdir_short():
+    """A temporary directory with a short pathname, removed after the test.
+
+    Some uses need a path short enough to fit tar's ~100-byte symlink-target
+    limit -- notably tablespace locations, whose symlinks are written into a
+    base backup's tar stream.  The per-test tmp_path can exceed that (its deep
+    layout is especially long on macOS), so use a directory directly under the
+    system temp area instead.
+    """
+    d = tempfile.mkdtemp(prefix="pgt")
+    yield d
+    shutil.rmtree(d, ignore_errors=True)
+
+
+@pytest.fixture
 def pg(create_pg):
     """A single started PostgresServer for the test."""
     return create_pg("main")

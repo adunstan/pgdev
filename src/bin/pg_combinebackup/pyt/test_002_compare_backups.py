@@ -61,9 +61,10 @@ def _restore_node(node, backup_path, ts_oid, ts_dest):
     )
 
 
-def test_002_compare_backups(create_pg, tmp_path):
-    tempdir = str(tmp_path / "tempdir")
-    os.mkdir(tempdir)
+def test_002_compare_backups(create_pg, tempdir_short):
+    # Use a short tempdir: the tablespace symlinks below are written into a
+    # base backup's tar stream, whose target length is limited.
+    tempdir = tempdir_short
 
     # Can be changed to test the other modes.
     mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE") or "--copy"
