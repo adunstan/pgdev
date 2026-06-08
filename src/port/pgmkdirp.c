@@ -134,8 +134,17 @@ pg_mkdir_p(char *path, int omode)
 		}
 		else if (mkdir(path, last ? omode : S_IRWXU | S_IRWXG | S_IRWXO) < 0)
 		{
-			retval = -1;
-			break;
+			/*
+			 * Tolerate a concurrent creation of this directory: another
+			 * process may have created it in the window between the stat()
+			 * above and this mkdir(), in which case mkdir() fails with EEXIST.
+			 * Only treat it as an error if the path still is not a directory.
+			 */
+			if (errno != EEXIST || stat(path, &sb) != 0 || !S_ISDIR(sb.st_mode))
+			{
+				retval = -1;
+				break;
+			}
 		}
 		if (!last)
 			*p = '/';
