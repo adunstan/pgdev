@@ -9,6 +9,7 @@ automatically at the end of the test.
 """
 
 import os
+import pathlib
 import shutil
 import socket
 import subprocess
@@ -73,6 +74,23 @@ def pg_bin(bindir):
     return PgBin(bindir)
 
 
+@pytest.fixture
+def test_datadir(tmp_path):
+    """The per-test directory for servers and other test data.
+
+    Under the meson/testwrap harness this is the per-test TESTDATADIR (as
+    PostgreSQL::Test::Utils uses for tmp_check); for a standalone pytest run it
+    falls back to pytest's tmp_path.  Using the per-test directory rather than
+    pytest's shared pytest-of-<user> base matters because that shared base is
+    concurrently created and rotated by parallel test processes, which makes
+    directory creation (e.g. by initdb) race -- on Windows it fails outright.
+    """
+    root = os.environ.get("TESTDATADIR")
+    path = pathlib.Path(root) if root else tmp_path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _free_port():
     """Return an unused TCP port number (used to name the unix socket)."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -81,7 +99,7 @@ def _free_port():
 
 
 @pytest.fixture
-def create_pg(bindir, libdir, tmp_path):
+def create_pg(bindir, libdir, test_datadir):
     """Factory creating PostgresServer instances, torn down after the test.
 
     ``create_pg(name="main", start=True, initdb_extra=None,
@@ -96,8 +114,8 @@ def create_pg(bindir, libdir, tmp_path):
     TCP.  Together they let several nodes share one port, distinguished by IP
     -- needed for DNS-based load-balancing tests.
 
-    Data dirs live under the test's tmp_path; the unix socket lives in a short
-    /tmp directory to stay within the socket path length limit.
+    Data dirs live under the test's own data directory; the unix socket lives
+    in a short /tmp directory to stay within the socket path length limit.
     """
     servers = []
     sockdirs = []
@@ -127,7 +145,7 @@ def create_pg(bindir, libdir, tmp_path):
             name,
             bindir,
             libdir,
-            str(tmp_path / name),
+            str(test_datadir / name),
             _free_port() if port is None else port,
             sockdir,
             listen_host=listen_host,
@@ -157,9 +175,9 @@ def tempdir_short():
 
     Some uses need a path short enough to fit tar's ~100-byte symlink-target
     limit -- notably tablespace locations, whose symlinks are written into a
-    base backup's tar stream.  The per-test tmp_path can exceed that (its deep
-    layout is especially long on macOS), so use a directory directly under the
-    system temp area instead.
+    base backup's tar stream.  The per-test data directory can exceed that (its
+    deep layout is especially long on macOS), so use a directory directly under
+    the system temp area instead.
     """
     d = tempfile.mkdtemp(prefix="pgt")
     yield d
@@ -179,7 +197,7 @@ def conn(pg):
 
 
 @pytest.fixture
-def ldap_server(tmp_path):
+def ldap_server(test_datadir):
     """Factory creating LdapServer (slapd) instances, stopped after the test.
 
     ``ldap_server(rootpw, authtype)`` returns a running server (authtype is
@@ -202,7 +220,7 @@ def ldap_server(tmp_path):
 
     def _create(rootpw, authtype):
         counter[0] += 1
-        basedir = tmp_path / f"ldap{counter[0]}"
+        basedir = test_datadir / f"ldap{counter[0]}"
         basedir.mkdir()
         server = ldapserver.LdapServer(basedir, rootpw, authtype, certdir)
         servers.append(server)
@@ -215,7 +233,7 @@ def ldap_server(tmp_path):
 
 
 @pytest.fixture
-def kerberos(tmp_path):
+def kerberos(test_datadir):
     """Factory creating a Kerberos KDC, stopped after the test.
 
     ``kerberos(host, hostaddr, realm, srvnam="postgres")`` sets up a realm +
@@ -236,7 +254,7 @@ def kerberos(tmp_path):
 
     def _create(host, hostaddr, realm, srvnam="postgres"):
         counter[0] += 1
-        basedir = tmp_path / f"krb{counter[0]}"
+        basedir = test_datadir / f"krb{counter[0]}"
         basedir.mkdir()
         kdc = krb.Kerberos(basedir, host, hostaddr, realm, srvnam)
         kdcs.append(kdc)
@@ -276,11 +294,11 @@ def oauth_server():
 
 
 @pytest.fixture
-def ssl_server(bindir, tmp_path):
+def ssl_server(bindir, test_datadir):
     """An SSLServer (OpenSSL backend) for configuring a cluster for SSL.
 
     Skips the test unless this build uses OpenSSL (with_ssl=openssl).  Client
-    keys are copied, with private permissions, under tmp_path.
+    keys are copied, with private permissions, under the test data directory.
     """
     from .ssl_server import SSLServer
 
@@ -291,6 +309,6 @@ def ssl_server(bindir, tmp_path):
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
     )
     ssl_dir = os.path.join(repo, "src", "test", "ssl", "ssl")
-    keydir = tmp_path / "ssl-keys"
+    keydir = test_datadir / "ssl-keys"
     keydir.mkdir()
     return SSLServer(ssl_dir, keydir, bindir)
