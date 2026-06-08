@@ -7,9 +7,56 @@ directories first and then common system locations, honoring LD_LIBRARY_PATH /
 DYLD_LIBRARY_PATH, and returns the full path to the library file.
 """
 
+import ctypes
 import glob
 import os
 import sys
+
+
+def libpq_abi_skip_reason(libdir):
+    """Return a reason to skip if this Python cannot load the build's libpq.
+
+    The framework loads libpq in-process via ctypes, so the interpreter and
+    the library must share an ABI.  The common mismatch is a 64-bit Python
+    against a 32-bit libpq (meson's ``-m32`` build), which otherwise fails
+    every test with ``OSError: wrong ELF class``.  Detect it by reading the
+    library's ELF header rather than dlopen()ing it -- a trial dlopen of an
+    ASan-instrumented libpq would abort the process, not raise.  Returns None
+    when the ABI matches, when libpq cannot be located (the normal load path
+    reports that), or when the file is not ELF (macOS/Windows).
+    """
+    try:
+        if libdir:
+            path = find_lib_or_die("pq", libpath=[libdir], systempath=False)
+        else:
+            path = find_lib_or_die("pq", systempath=True)
+    except RuntimeError:
+        return None
+
+    elf_class = _elf_class(path)
+    if elf_class is None:
+        return None
+
+    py_bits = ctypes.sizeof(ctypes.c_void_p) * 8
+    lib_bits = 64 if elf_class == 2 else 32
+    if py_bits != lib_bits:
+        return (
+            f"{py_bits}-bit Python cannot load {lib_bits}-bit libpq ({path}); "
+            f"the in-process libpq framework needs a {lib_bits}-bit interpreter"
+        )
+    return None
+
+
+def _elf_class(path):
+    """Return 1 (ELFCLASS32), 2 (ELFCLASS64), or None if *path* is not ELF."""
+    try:
+        with open(path, "rb") as fh:
+            ident = fh.read(5)
+    except OSError:
+        return None
+    if ident[:4] != b"\x7fELF":
+        return None
+    return ident[4]  # e_ident[EI_CLASS]: 1 = 32-bit, 2 = 64-bit
 
 
 def find_lib_or_die(lib, libpath=None, systempath=True):

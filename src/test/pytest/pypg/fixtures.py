@@ -51,6 +51,22 @@ def libdir(pg_config):
     return _pg_config_value(pg_config, "--libdir")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _check_libpq_abi(libdir):
+    """Skip the suite when this Python cannot load the build's libpq.
+
+    The in-process libpq layer is loaded via ctypes, so the interpreter must
+    match libpq's ABI.  A 64-bit Python cannot dlopen the 32-bit libpq from a
+    ``-m32`` build, which would otherwise fail every test with an OSError; skip
+    with a clear reason instead.  See findlib.libpq_abi_skip_reason.
+    """
+    from libpq.findlib import libpq_abi_skip_reason
+
+    reason = libpq_abi_skip_reason(libdir)
+    if reason:
+        pytest.skip(reason)
+
+
 @pytest.fixture(scope="session")
 def pg_bin(bindir):
     """A PgBin for running client programs that do not need a server."""
