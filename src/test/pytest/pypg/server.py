@@ -205,6 +205,13 @@ class PostgresServer:
         """
         os.makedirs(self.backup_dir, exist_ok=True)
         os.makedirs(self.archive_dir, exist_ok=True)
+        # Pre-create the (empty) data directory so initdb takes its
+        # "present but empty" path instead of calling pg_mkdir_p.  Python's
+        # makedirs tolerates a concurrent create of a shared parent, whereas
+        # initdb's pg_mkdir_p does not: under parallel test execution several
+        # initdb processes race to create a common temp ancestor and all but
+        # one fail with "File exists".
+        os.makedirs(self.data_dir, exist_ok=True)
 
         argv = [
             "initdb",
