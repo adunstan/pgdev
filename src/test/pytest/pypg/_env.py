@@ -38,4 +38,8 @@ def prepare_environment():
     os.environ["LC_MESSAGES"] = "C"
     for var in _PG_VARS_TO_CLEAR:
         os.environ.pop(var, None)
+    # Default the database to "postgres", as PostgreSQL::Test::Cluster does, so
+    # a connection string without an explicit dbname (e.g. in load-balancing
+    # tests) does not fall through to the OS user name.
+    os.environ["PGDATABASE"] = "postgres"
     _prepared = True

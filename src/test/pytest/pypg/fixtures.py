@@ -85,16 +85,26 @@ def create_pg(bindir, libdir, tmp_path):
     """Factory creating PostgresServer instances, torn down after the test.
 
     ``create_pg(name="main", start=True, initdb_extra=None,
-    allows_streaming=False, has_archiving=False, has_restoring=False)`` returns
-    an initialized (and, by default, started) server; ``initdb_extra`` is a
-    list of extra arguments passed to initdb (e.g. ``["--no-data-checksums"]``).
-    The streaming/archiving/restoring flags are forwarded to
-    :meth:`PostgresServer.init`.  Data dirs live under the test's tmp_path; the
-    unix socket lives in a short /tmp directory to stay within the socket path
-    length limit.
+    allows_streaming=False, has_archiving=False, has_restoring=False,
+    port=None, own_host=False)`` returns an initialized (and, by default,
+    started) server; ``initdb_extra`` is a list of extra arguments passed to
+    initdb (e.g. ``["--no-data-checksums"]``).  The streaming/archiving/
+    restoring flags are forwarded to :meth:`PostgresServer.init`.
+
+    ``port`` pins an explicit port (otherwise a free one is chosen); ``own_host``
+    binds the node to its own loopback address (127.0.0.1, .2, .3, ...) over
+    TCP, mirroring PostgreSQL::Test::Cluster's own_host.  Together they let
+    several nodes share one port, distinguished by IP -- needed for DNS-based
+    load-balancing tests.
+
+    Data dirs live under the test's tmp_path; the unix socket lives in a short
+    /tmp directory to stay within the socket path length limit.
     """
     servers = []
     sockdirs = []
+    # Per-test loopback-IP counter for own_host nodes (127.0.0.1, .2, .3, ...),
+    # like PostgreSQL::Test::Cluster's $last_host_assigned.
+    own_host_counter = [0]
 
     def _create(
         name="main",
@@ -104,16 +114,25 @@ def create_pg(bindir, libdir, tmp_path):
         allows_streaming=False,
         has_archiving=False,
         has_restoring=False,
+        port=None,
+        own_host=False,
     ):
         sockdir = tempfile.mkdtemp(prefix="pgt")
         sockdirs.append(sockdir)
+        listen_host = None
+        if own_host:
+            own_host_counter[0] += 1
+            if own_host_counter[0] > 254:
+                raise RuntimeError("too many own_host nodes")
+            listen_host = f"127.0.0.{own_host_counter[0]}"
         server = PostgresServer(
             name,
             bindir,
             libdir,
             str(tmp_path / name),
-            _free_port(),
+            _free_port() if port is None else port,
             sockdir,
+            listen_host=listen_host,
         )
         server.init(
             extra=initdb_extra,

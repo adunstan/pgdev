@@ -26,18 +26,25 @@ from .util import TIMEOUT_DEFAULT, USE_UNIX_SOCKETS, poll_until
 class PostgresServer:
     """One initdb'd data directory and the server running on it."""
 
-    def __init__(self, name, bindir, libdir, basedir, port, sockdir):
+    def __init__(self, name, bindir, libdir, basedir, port, sockdir,
+                 listen_host=None):
         self.name = name
         self._bindir = str(bindir)
         self.libdir = str(libdir)
         self.basedir = str(basedir)
         self.port = int(port)
         self._sockdir = str(sockdir)
-        # The connection host: the socket directory with Unix-domain sockets,
-        # or the loopback address when listening on TCP (Windows).  Mirrors
-        # PostgreSQL::Test::Cluster.  Backslashes in a Windows socket path are
-        # converted to '/' so the value is valid in postgresql.conf.
-        if USE_UNIX_SOCKETS:
+        # The connection host.  When listen_host is given (own_host), bind that
+        # loopback address over TCP; combined with an explicit shared port this
+        # lets several nodes coexist, distinguished by IP, as
+        # PostgreSQL::Test::Cluster's own_host => 1 does.  Otherwise use the
+        # socket directory with Unix-domain sockets, or 127.0.0.1 on TCP
+        # (Windows).  Backslashes in a Windows socket path are converted to '/'
+        # so the value is valid in postgresql.conf.
+        self._own_host = listen_host is not None
+        if self._own_host:
+            self.host = listen_host
+        elif USE_UNIX_SOCKETS:
             self.host = self._sockdir.replace("\\", "/")
         else:
             self.host = "127.0.0.1"
@@ -95,16 +102,17 @@ class PostgresServer:
         """postgresql.conf lines selecting the connection transport.
 
         Unix-domain sockets in this node's private directory, or TCP on the
-        loopback address (Windows).  Mirrors PostgreSQL::Test::Cluster.
+        loopback address (Windows, or any own_host node).  Mirrors
+        PostgreSQL::Test::Cluster.
         """
-        if USE_UNIX_SOCKETS:
+        if self._own_host or not USE_UNIX_SOCKETS:
             return [
-                "listen_addresses = ''",
-                f"unix_socket_directories = '{self.host}'",
+                f"listen_addresses = '{self.host}'",
+                "unix_socket_directories = ''",
             ]
         return [
-            f"listen_addresses = '{self.host}'",
-            "unix_socket_directories = ''",
+            "listen_addresses = ''",
+            f"unix_socket_directories = '{self.host}'",
         ]
 
     def raw_connect(self):

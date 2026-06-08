@@ -23,15 +23,11 @@ on the fly, because it requires root permissions to change the hosts file.  In
 CI we set up the previously mentioned rules in the hosts file, so that this load
 balancing method is tested.
 
-NOTE (framework gap): this test is gated behind PG_TEST_EXTRA=load_balance, the
-special /etc/hosts entries above, and a Linux/Windows host.  Even with all of
-those satisfied it still skips, because the scenario needs all three nodes
-bound to distinct loopback addresses (127.0.0.1/2/3) on the *same* TCP port so
-the single DNS name selects between them.  PostgresServer can now listen on TCP
-(on Windows), but it still has no "own_host" machinery to bind each node to a
-chosen 127.0.0.x address -- each node gets one host on its own free port.  Real
-execution therefore awaits framework support for per-node binding to distinct
-loopback IPs -- see the inline comments in the test body.
+This test is gated behind PG_TEST_EXTRA=load_balance, the special /etc/hosts
+entries above, and a Linux/Windows host; otherwise it skips.  When those are
+present it runs the three nodes with create_pg(own_host=True) and a shared
+port, so each binds a distinct loopback address (127.0.0.1/2/3) on the same TCP
+port -- the topology the single DNS name pg-loadbalancetest needs.
 """
 
 import os
@@ -76,15 +72,7 @@ def _skip_reason():
     if len(HOSTS_PATTERN.findall(hosts_content)) != 3:
         return "hosts file was not prepared for DNS load balance test"
 
-    # Even with the hosts file in place, this test needs all three nodes bound
-    # to distinct loopback addresses (127.0.0.1/2/3) on the *same* TCP port so
-    # the single DNS name selects between them.  PostgresServer gives each node
-    # a single host (a socket dir, or 127.0.0.1 on TCP) on its own free port,
-    # with no machinery to bind each node to a distinct loopback IP, so the
-    # scenario cannot be reproduced here.
-    return ("DNS load balancing needs per-node TCP binding to distinct "
-            "loopback IPs on a shared port, which the pytest framework's "
-            "PostgresServer does not support")
+    return None
 
 
 # Module-level skip: in the conversion environment load_balance is not in
@@ -129,20 +117,12 @@ def _occurrences(node, pattern):
 # -- the test ----------------------------------------------------------------
 
 def test_004_load_balance_dns(create_pg):
-    port = None  # noqa: F841 - see framework-gap note below
-
-    # Framework-gap note: this scenario needs all three nodes bound to distinct
-    # loopback addresses (127.0.0.1/2/3) on the *same* TCP port so that the
-    # single DNS name pg-loadbalancetest (-> 127.0.0.1/2/3) selects between
-    # them.  The PostgresServer fixture here is unix-socket-only and assigns
-    # each node its own free port, so it cannot reproduce the shared-port /
-    # per-IP binding the DNS load-balancing behaviour depends on.  Making this
-    # test actually run requires extending the framework with TCP
-    # listen_addresses and per-node loopback binding support.
-
-    node1 = create_pg("node1", start=False)
-    node2 = create_pg("node2", start=False)
-    node3 = create_pg("node3", start=False)
+    # All three nodes bind their own loopback address (127.0.0.1/2/3) on the
+    # *same* TCP port, so the single DNS name pg-loadbalancetest (which the
+    # prepared hosts file maps to those three IPs) selects between them.
+    node1 = create_pg("node1", start=False, own_host=True)
+    node2 = create_pg("node2", start=False, own_host=True, port=node1.port)
+    node3 = create_pg("node3", start=False, own_host=True, port=node1.port)
 
     for node in (node1, node2, node3):
         # log_statement = all so connect_ok's log_like checks can see the SQL.
