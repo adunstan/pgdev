@@ -7,7 +7,7 @@ to create backups.
 import os
 import shutil
 
-from pypg.util import append_to_file
+from pypg.util import append_to_file, copy_live_tree
 
 
 def test_042_low_level_backup(create_pg):
@@ -29,7 +29,10 @@ def test_042_low_level_backup(create_pg):
     # Copy files.
     backup_dir = os.path.join(node_primary.backup_dir, backup_name)
 
-    shutil.copytree(node_primary.data_dir, backup_dir, symlinks=True)
+    # Copying a running primary's data dir races with the server (e.g. WAL
+    # archive_status flags come and go), so use a copy that tolerates files
+    # that disappear mid-copy.
+    copy_live_tree(node_primary.data_dir, backup_dir)
 
     # Cleanup some files/paths that should not be in the backup.  There is no
     # attempt to handle all the exclusions done by pg_basebackup here, in part

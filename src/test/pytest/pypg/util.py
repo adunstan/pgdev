@@ -3,6 +3,7 @@
 """Small file and polling helpers used by the test framework."""
 
 import os
+import shutil
 import sys
 import time
 
@@ -28,6 +29,34 @@ def append_to_file(path, text):
     """Append *text* to *path* (creating it if needed)."""
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(text)
+
+
+def copy_live_tree(src, dst):
+    """Recursively copy *src* to *dst*, tolerating entries that vanish.
+
+    Copying a running server's data directory races with the server: a file
+    present when a directory is scanned (e.g. a WAL archive_status flag) can be
+    gone before it is copied.  Such ENOENT cases are silently skipped, as a
+    low-level base backup must.  Symlinks are recreated as symlinks.
+    """
+    os.makedirs(dst, exist_ok=True)
+    try:
+        entries = list(os.scandir(src))
+    except FileNotFoundError:
+        return
+    for entry in entries:
+        srcpath = os.path.join(src, entry.name)
+        dstpath = os.path.join(dst, entry.name)
+        try:
+            if entry.is_symlink():
+                os.symlink(os.readlink(srcpath), dstpath)
+            elif entry.is_dir():
+                copy_live_tree(srcpath, dstpath)
+            else:
+                shutil.copy2(srcpath, dstpath)
+        except FileNotFoundError:
+            # Entry vanished between the scan and the copy; skip it.
+            continue
 
 
 def poll_until(predicate, timeout=TIMEOUT_DEFAULT, interval=0.1):
