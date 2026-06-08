@@ -170,7 +170,7 @@ def test_002_pg_upgrade(create_pg, pg_bin, tmp_path):
     tempdir = str(tmp_path)
 
     # Can be changed to test the other modes.
-    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE") or "--copy"
 
     # Cross-version testing requires both "olddump" and "oldinstall" to be set;
     # having only one is an error.

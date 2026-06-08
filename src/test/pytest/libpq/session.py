@@ -36,7 +36,7 @@ from .pgnotify import read_notification
 from .result import extract_result_data
 
 # Default per-operation timeout in seconds.
-DEFAULT_TIMEOUT = int(os.environ.get("PG_TEST_TIMEOUT_DEFAULT", "180"))
+DEFAULT_TIMEOUT = int(os.environ.get("PG_TEST_TIMEOUT_DEFAULT") or "180")
 
 # Cache of loaded libpq handles, keyed by resolved library path, so multiple
 # clusters with different libdirs each get the right library exactly once.

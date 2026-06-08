@@ -7,7 +7,7 @@ import os
 
 def test_005_char_signedness(pg_bin, create_pg, bindir, tmp_path):
     # Can be changed to test the other modes
-    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE") or "--copy"
 
     # Initialize old and new clusters.  pg_upgrade needs the old cluster
     # stopped and the new cluster freshly initdb'd, so neither is started.

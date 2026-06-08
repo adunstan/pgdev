@@ -49,7 +49,7 @@ def _combine_backup(node, root_node, prior_backups, final_backup,
 
 def test_003_timeline(create_pg, tmp_path):
     # Can be changed to test the other modes.
-    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE") or "--copy"
 
     print(f"# testing using mode {mode}")
 

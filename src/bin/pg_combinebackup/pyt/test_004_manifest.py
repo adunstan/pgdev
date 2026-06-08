@@ -12,7 +12,7 @@ import re
 from pypg.util import slurp_file
 
 # Can be changed to test the other modes.
-MODE = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE", "--copy")
+MODE = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE") or "--copy"
 
 
 def _combine_and_test_one_backup(node, original_backup_path, backup_name,

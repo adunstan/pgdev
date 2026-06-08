@@ -10,7 +10,7 @@ import shutil
 
 def test_009_no_full_file(create_pg, tmp_path):
     # Can be changed to test the other modes.
-    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE") or "--copy"
 
     print(f"# testing using mode {mode}")
 

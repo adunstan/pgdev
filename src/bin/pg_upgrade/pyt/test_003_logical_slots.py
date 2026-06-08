@@ -25,7 +25,7 @@ def _slurp_file(path):
 
 def test_003_logical_slots(create_pg, pg_bin):
     # Can be changed to test the other modes
-    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE") or "--copy"
 
     # Initialize old cluster
     oldpub = create_pg("oldpub", start=False, allows_streaming="logical")

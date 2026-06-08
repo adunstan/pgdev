@@ -15,7 +15,7 @@ from libpq import ExecStatusType
 
 def test_006_db_file_copy(create_pg, tmp_path):
     # Can be changed to test the other modes.
-    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE") or "--copy"
     print(f"# testing using mode {mode}")
 
     # Set up a new database instance.

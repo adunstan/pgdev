@@ -22,7 +22,7 @@ def _find_file(root, name_re):
 
 def test_004_subscription(create_pg, tmp_path):
     # Can be changed to test the other modes.
-    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE") or "--copy"
 
     # Initialize publisher node
     publisher = create_pg("publisher", allows_streaming="logical")

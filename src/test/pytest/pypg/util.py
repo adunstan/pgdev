@@ -7,7 +7,7 @@ import sys
 import time
 
 # Default per-operation timeout in seconds (PG_TEST_TIMEOUT_DEFAULT, 180).
-TIMEOUT_DEFAULT = int(os.environ.get("PG_TEST_TIMEOUT_DEFAULT", "180"))
+TIMEOUT_DEFAULT = int(os.environ.get("PG_TEST_TIMEOUT_DEFAULT") or "180")
 
 # Connection transport, mirroring PostgreSQL::Test::Utils: use Unix-domain
 # sockets everywhere except Windows, where we listen on TCP (127.0.0.1).

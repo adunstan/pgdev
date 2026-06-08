@@ -11,7 +11,7 @@ import os
 
 def test_007_wal_level_minimal(create_pg):
     # Can be changed to test the other modes.
-    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE", "--copy")
+    mode = os.environ.get("PG_TEST_PG_COMBINEBACKUP_MODE") or "--copy"
     print(f"# testing using mode {mode}")
 
     # Set up a new database instance.
