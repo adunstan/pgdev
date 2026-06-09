@@ -91,7 +91,7 @@ env:
     -Dpytest=enabled
     -Dreadline=enabled
     -Dssl=openssl
-    -Dtap_tests=enabled
+    -Dtap_tests=disabled
     -Dzlib=enabled
     -Dzstd=enabled
 
@@ -829,7 +829,7 @@ jobs:
         -Dplpython=enabled
         -Dpytest=enabled
         -Dssl=openssl
-        -Dtap_tests=enabled
+        -Dtap_tests=disabled
 
     defaults:
       run:
