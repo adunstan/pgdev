@@ -120,22 +120,17 @@ restart_after_crash = on
     node_standby.signal_backend(pid, "KILL")
     killme.close()
 
-    # Wait for the crash-restart to actually run, then complete.  Gating on the
-    # log is essential: a single "SELECT 1" can be served by the postmaster
-    # before it notices the crash, so polling for one successful query can
-    # return while the server is about to (re-)enter recovery, after which a
-    # fresh connection is rejected with "the database system is in recovery
-    # mode".  These two messages bracket the restart unambiguously.
+    # Confirm the crash restart actually began before waiting for readiness: a
+    # single "SELECT 1" can be served by the postmaster before it notices the
+    # crash, so polling for one success can return while the server is about to
+    # (re-)enter recovery.  "all server processes terminated; reinitializing"
+    # appears only on a crash restart, so it cannot match the pre-crash server.
     node_standby.wait_for_log(
         "all server processes terminated; reinitializing", crash_logpos)
-    node_standby.wait_for_log(
-        "database system is ready to accept connections", crash_logpos)
 
-    # After recovery, the server should be able to start.  Connect freshly
-    # rather than via the cached session: that session was on a backend the
-    # crash terminated.
-    check = node_standby.connect("postgres")
-    try:
-        assert check.query_oneval("select 1") == "1", "psql select 1"
-    finally:
-        check.close()
+    # Now wait until crash recovery finishes and the server accepts queries
+    # again.  poll_query_until retries past the transient connection rejections
+    # during recovery ("the database system is not yet accepting connections",
+    # "... is in recovery mode").
+    assert node_standby.poll_query_until("SELECT 1", expected="1"), \
+        "server did not finish restarting after crash"
