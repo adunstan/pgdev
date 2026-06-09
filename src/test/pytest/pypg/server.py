@@ -851,9 +851,11 @@ class PostgresServer:
         real connection handshake: that connection-time behavior is exactly what
         the auth/SSL tests exercise, and relying on the in-process library to
         read the environment is not portable.  ``-w`` keeps psql from blocking
-        on a password prompt; ``-XAt`` gives unaligned, tuples-only output.
+        on a password prompt; ``-XAtq`` gives unaligned, tuples-only, quiet
+        output (no command tags like ``CREATE TABLE``), matching what the
+        assertions expect.
         """
-        argv = ["psql", "-w", "-X", "-A", "-t",
+        argv = ["psql", "-w", "-X", "-A", "-q", "-t",
                 "-d", self._full_connstr(connstr),
                 "-c", sql if sql is not None else "SELECT 1"]
         res = self.pg_bin.result(argv)
