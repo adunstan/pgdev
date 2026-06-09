@@ -143,5 +143,13 @@ restart_after_crash = on
         lambda: node_standby.poll_query_until("SELECT 1", expected="1")
     ), "server never finished restarting"
 
-    # After recovery, the server should be able to start.
-    assert node_standby.safe_sql("select 1") == "1", "psql select 1"
+    # After recovery, the server should be able to start.  Connect freshly
+    # rather than via the cached session: that session was on a backend the
+    # crash terminated, and libpq does not report the connection as broken
+    # until it is next used, so reusing it can fail with "server closed the
+    # connection unexpectedly".
+    check = node_standby.connect("postgres")
+    try:
+        assert check.query_oneval("select 1") == "1", "psql select 1"
+    finally:
+        check.close()
