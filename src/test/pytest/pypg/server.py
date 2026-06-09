@@ -20,7 +20,13 @@ from libpq import ConnStatusType, Session
 from libpq.errors import ConnectionError as PqConnectionError
 
 from .command import CommandResult, PgBin
-from .util import TIMEOUT_DEFAULT, USE_UNIX_SOCKETS, poll_until, run_captured
+from .util import (
+    TIMEOUT_DEFAULT,
+    USE_UNIX_SOCKETS,
+    WINDOWS_OS,
+    poll_until,
+    run_captured,
+)
 
 
 class PostgresServer:
@@ -253,12 +259,24 @@ class PostgresServer:
         if has_archiving:
             self.enable_archiving()
 
+    @staticmethod
+    def _file_copy_command(src, dst):
+        """A shell command that copies file *src* to *dst*.
+
+        *src*/*dst* may embed the archive/restore ``%p``/``%f`` placeholders.
+        On Windows use cmd's ``copy`` with backslash paths; elsewhere ``cp``.
+        """
+        if WINDOWS_OS:
+            return 'copy "{}" "{}"'.format(
+                src.replace("/", "\\"), dst.replace("/", "\\"))
+        return f'cp "{src}" "{dst}"'
+
     def enable_archiving(self):
         """Enable WAL archiving into :attr:`archive_dir`.
 
         Internal helper.
         """
-        copy_command = f'cp "%p" "{self.archive_dir}/%f"'
+        copy_command = self._file_copy_command("%p", f"{self.archive_dir}/%f")
         self.append_conf(
             "\n".join(
                 [
@@ -481,7 +499,7 @@ class PostgresServer:
         Internal helper.
         """
         print(f'### Enabling WAL restore for node "{self.name}"')
-        copy_command = f'cp "{root_node.archive_dir}/%f" "%p"'
+        copy_command = self._file_copy_command(f"{root_node.archive_dir}/%f", "%p")
         self.append_conf(f"\nrestore_command = '{copy_command}'\n")
         if standby:
             self.set_standby_mode()
