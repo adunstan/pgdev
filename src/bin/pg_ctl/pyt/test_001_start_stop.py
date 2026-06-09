@@ -6,7 +6,7 @@ import os
 import re
 import stat
 
-from pypg.util import short_tempdir
+from pypg.util import WINDOWS_OS, short_tempdir
 
 
 def _chmod_recursive(path, dir_mode, file_mode):
@@ -113,29 +113,33 @@ def test_start_stop(pg_bin, tmp_path):
             "pg_ctl restart with server not running",
         )
 
-        # Permissions on log file should be default (unix-only).
-        assert os.path.isfile(log_file)
-        assert _check_mode_recursive(data_dir, 0o700, 0o600)
+        # Permissions on the log file should be default.  Unix-style
+        # permissions are not supported on Windows, so skip the check there.
+        if not WINDOWS_OS:
+            assert os.path.isfile(log_file)
+            assert _check_mode_recursive(data_dir, 0o700, 0o600)
 
         # Log file for group access test.
         log_file = os.path.join(data_dir, "perm-test-640.log")
 
-        pg_bin.command_ok(
-            ["pg_ctl", "stop", "--pgdata", data_dir],
-            "stop server before group permission test",
-        )
+        # Group access is not supported on Windows; skip that part there.
+        if not WINDOWS_OS:
+            pg_bin.command_ok(
+                ["pg_ctl", "stop", "--pgdata", data_dir],
+                "stop server before group permission test",
+            )
 
-        # Change the data dir mode so the log file will be created with group
-        # read privileges on the next start.
-        _chmod_recursive(data_dir, 0o750, 0o640)
+            # Change the data dir mode so the log file will be created with
+            # group read privileges on the next start.
+            _chmod_recursive(data_dir, 0o750, 0o640)
 
-        pg_bin.command_ok(
-            ["pg_ctl", "start", "--pgdata", data_dir, "--log", log_file],
-            "start server to check group permissions",
-        )
+            pg_bin.command_ok(
+                ["pg_ctl", "start", "--pgdata", data_dir, "--log", log_file],
+                "start server to check group permissions",
+            )
 
-        assert os.path.isfile(log_file)
-        assert _check_mode_recursive(data_dir, 0o750, 0o640)
+            assert os.path.isfile(log_file)
+            assert _check_mode_recursive(data_dir, 0o750, 0o640)
 
         pg_bin.command_ok(
             ["pg_ctl", "restart", "--pgdata", data_dir, "--log", log_file],

@@ -12,6 +12,8 @@ import stat
 
 import pytest
 
+from pypg.util import WINDOWS_OS
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -157,8 +159,11 @@ def test_successful_creation_and_permissions(pg_bin, test_datadir):
         if saved_tz is not None:
             os.environ["TZ"] = saved_tz
 
-    # Permissions on PGDATA should be default (Windows skipped: Linux only).
-    assert _check_mode_recursive(datadir, 0o700, 0o600), "check PGDATA permissions"
+    # Permissions on PGDATA should be default.  Unix-style permissions are not
+    # supported on Windows, so skip the check there.
+    if not WINDOWS_OS:
+        assert _check_mode_recursive(datadir, 0o700, 0o600), \
+            "check PGDATA permissions"
 
     # Control file should tell that data checksums are enabled by default.
     pg_bin.command_like(
@@ -190,6 +195,8 @@ def test_sync_method_syncfs(pg_bin, test_datadir, supports_syncfs):
         pg_bin.command_fails(cmd, "sync method syncfs")
 
 
+@pytest.mark.skipif(
+    WINDOWS_OS, reason="group access not supported on Windows")
 def test_group_access(pg_bin, test_datadir):
     """Check group access on PGDATA (Windows/cygwin skipped: Linux only)."""
     datadir_group = str(test_datadir / "data_group")
