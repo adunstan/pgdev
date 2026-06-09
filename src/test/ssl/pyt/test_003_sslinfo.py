@@ -30,7 +30,9 @@ SSL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ssl"))
 
 def _cert(name):
     """Absolute path to a cert/key file in the ssl directory."""
-    return os.path.join(SSL_DIR, name)
+    # Forward slashes: these paths go into conninfo, where libpq treats a
+    # backslash as an escape character.
+    return os.path.join(SSL_DIR, name).replace("\\", "/")
 
 
 # Set of default settings for SSL parameters in connection string.  This

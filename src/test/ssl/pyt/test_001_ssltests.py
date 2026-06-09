@@ -33,7 +33,9 @@ def _ssl(relpath):
 
     We expand to an absolute path so the working directory does not matter.
     """
-    return os.path.join(_SSL_DIR, relpath)
+    # Forward slashes: these paths go into conninfo, where libpq treats a
+    # backslash as an escape character.
+    return os.path.join(_SSL_DIR, relpath).replace("\\", "/")
 
 
 def test_001_ssltests(create_pg, ssl_server):

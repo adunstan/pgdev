@@ -32,7 +32,7 @@ SERVERHOSTADDR = "127.0.0.1"
 SERVERHOSTCIDR = "127.0.0.1/32"
 
 # The directory holding the test certificates and keys.
-SSL_DIR = os.path.join(os.path.dirname(__file__), "..", "ssl")
+SSL_DIR = os.path.join(os.path.dirname(__file__), "..", "ssl").replace("\\", "/")
 
 
 def _restart_fails(node):

@@ -65,16 +65,18 @@ class SSLServer:
 
         # The client private keys must not be world-readable, so work from
         # copies under keydir with adjusted permissions.
+        # The stored paths go into connection strings; use forward slashes so
+        # libpq does not treat Windows backslashes as escape characters.
         for keyfile in _CLIENT_KEYS:
             dst = os.path.join(self.keydir, keyfile)
             shutil.copy(os.path.join(self.ssl_dir, keyfile), dst)
             os.chmod(dst, 0o600)
-            self.key[keyfile] = dst
+            self.key[keyfile] = dst.replace("\\", "/")
         # A deliberately world-readable copy, to test wrong permissions.
         wrong = os.path.join(self.keydir, "client_wrongperms.key")
         shutil.copy(os.path.join(self.ssl_dir, "client.key"), wrong)
         os.chmod(wrong, 0o644)
-        self.key["client_wrongperms.key"] = wrong
+        self.key["client_wrongperms.key"] = wrong.replace("\\", "/")
 
     def sslkey(self, keyfile):
         """Return an ' sslkey=<path>' connection-string fragment."""

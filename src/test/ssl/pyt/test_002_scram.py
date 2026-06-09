@@ -109,7 +109,7 @@ def _run_body(create_pg, ssl_server):
     # already copied ssl/client.key to a private-perms temp copy that libpq
     # will accept.
     ssl_dir = os.path.join(os.path.dirname(__file__), "..", "ssl")
-    client_crt = os.path.join(ssl_dir, "client.crt")
+    client_crt = os.path.join(ssl_dir, "client.crt").replace("\\", "/")
     client_tmp_key = ssl_server.key["client.key"]
     node.connect_fails(
         f"sslcert={client_crt} sslkey={client_tmp_key} sslrootcert=invalid "
