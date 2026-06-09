@@ -21,11 +21,11 @@ import random
 import re
 import shutil
 import socket
-import tempfile
 
 import pytest
 
 from pypg.server import PostgresServer
+from pypg.util import short_tempdir
 
 EMPTY = [r"^$"]
 
@@ -44,7 +44,7 @@ def _free_port():
 @pytest.fixture(scope="module")
 def basedir():
     """A per-module scratch directory for data dir, scripts, and logs."""
-    d = tempfile.mkdtemp(prefix="pgbench_001_")
+    d = short_tempdir(prefix="pgbench_001_")
     yield d
     shutil.rmtree(d, ignore_errors=True)
 
@@ -56,7 +56,7 @@ def pg(bindir, libdir, basedir):
     Initialized with ``--locale C`` so program output can be matched against
     untranslated message strings.
     """
-    sockdir = tempfile.mkdtemp(prefix="pgt")
+    sockdir = short_tempdir()
     server = PostgresServer(
         "main",
         bindir,

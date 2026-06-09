@@ -14,13 +14,13 @@ import re
 import shutil
 import socket
 import subprocess
-import tempfile
 
 import pytest
 
 from . import _env
 from .command import PgBin
 from .server import PostgresServer
+from .util import short_tempdir
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -141,7 +141,7 @@ def create_pg(bindir, libdir, test_datadir):
         port=None,
         own_host=False,
     ):
-        sockdir = tempfile.mkdtemp(prefix="pgt")
+        sockdir = short_tempdir()
         sockdirs.append(sockdir)
         listen_host = None
         if own_host:
@@ -187,7 +187,7 @@ def tempdir_short():
     deep layout is especially long on macOS), so use a directory directly under
     the system temp area instead.
     """
-    d = tempfile.mkdtemp(prefix="pgt")
+    d = short_tempdir()
     yield d
     shutil.rmtree(d, ignore_errors=True)
 

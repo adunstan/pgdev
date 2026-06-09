@@ -5,7 +5,8 @@
 import os
 import shutil
 import subprocess
-import tempfile
+
+from pypg.util import short_tempdir
 
 
 def _have_pg_config_define(define):
@@ -51,7 +52,7 @@ def test_008_untar(create_pg):
         jf.write(junk_data)
 
     # Create a tablespace directory.
-    source_ts_path = tempfile.mkdtemp(prefix="pgt")
+    source_ts_path = short_tempdir()
 
     # Create a tablespace with table in it.  CREATE TABLESPACE cannot run
     # inside a transaction block, so issue each statement separately on the

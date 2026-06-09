@@ -3,8 +3,10 @@
 """Small file and polling helpers used by the test framework."""
 
 import os
+import secrets
 import shutil
 import sys
+import tempfile
 import time
 
 # Default per-operation timeout in seconds (PG_TEST_TIMEOUT_DEFAULT, 180).
@@ -15,6 +17,34 @@ TIMEOUT_DEFAULT = int(os.environ.get("PG_TEST_TIMEOUT_DEFAULT") or "180")
 # sockets even on Windows.
 WINDOWS_OS = sys.platform in ("win32", "cygwin")
 USE_UNIX_SOCKETS = (not WINDOWS_OS) or ("PG_TEST_USE_UNIX_SOCKETS" in os.environ)
+
+
+def short_tempdir(prefix="pgt"):
+    """Create and return a uniquely-named directory under the system temp area.
+
+    The short pathname keeps Unix-socket and tablespace-symlink targets within
+    their length limits (a unix socket path and tar's ~100-byte symlink-target
+    field).  The caller owns the directory and is responsible for removing it.
+
+    On Windows the directory is created with the default mode so that it
+    inherits the parent's access-control list.  That matters when the postmaster
+    runs under a restricted access token (one with the Administrators group
+    disabled, as happens when launched from an elevated context): it must be
+    able to create files such as the socket lock file inside the directory, and
+    the owner-only DACL that a private (0o700) mode produces would deny that.
+    Elsewhere the directory is created private, like the rest of the framework.
+    """
+    base = tempfile.gettempdir()
+    while True:
+        path = os.path.join(base, prefix + secrets.token_hex(8))
+        try:
+            if sys.platform == "win32":
+                os.mkdir(path)
+            else:
+                os.mkdir(path, 0o700)
+            return path
+        except FileExistsError:
+            continue
 
 
 def slurp_file(path, offset=0):

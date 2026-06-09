@@ -7,11 +7,15 @@ import os
 import re
 import stat
 import subprocess
-import tempfile
 
 import pytest
 
-from pypg.util import TIMEOUT_DEFAULT, append_to_file, slurp_file
+from pypg.util import (
+    TIMEOUT_DEFAULT,
+    append_to_file,
+    short_tempdir,
+    slurp_file,
+)
 
 # pg_basebackup invocation defaults: keep test times reasonable.  Used as the
 # leading elements of the argument list passed to the node command_* helpers.
@@ -416,7 +420,7 @@ def _run_body(create_pg, tempdir):
 
     # Create a temporary directory in a short system location (for short
     # tablespace path names, to stay under the tar 99-char limit).
-    sys_tempdir = tempfile.mkdtemp(prefix="pgt")
+    sys_tempdir = short_tempdir()
 
     # pg_replslot should be empty.  Remove and recreate it under sys_tempdir
     # before symlinking, to avoid moving across drives.

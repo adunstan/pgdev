@@ -5,9 +5,10 @@
 import os
 import shutil
 import subprocess
-import tempfile
 
 import pytest
+
+from pypg.util import short_tempdir
 
 
 def _tar_portability_options(tar):
@@ -230,7 +231,7 @@ def test_003_corruption(scenario, create_pg, tmp_path):
 
     # Include a user-defined tablespace in the hopes of detecting problems in
     # that area.
-    source_ts_path = tempfile.mkdtemp(prefix="pgt")
+    source_ts_path = short_tempdir()
 
     # CREATE TABLESPACE cannot run inside a transaction block, so issue each
     # statement separately rather than as one multi-statement implicit
@@ -248,7 +249,7 @@ def test_003_corruption(scenario, create_pg, tmp_path):
 
     # Take a backup and check that it verifies OK.
     backup_path = str(tmp_path / name)
-    backup_ts_path = tempfile.mkdtemp(prefix="pgt")
+    backup_ts_path = short_tempdir()
     # tablespace gets remapped into a short tempdir so paths stay short.
     primary.command_ok(
         [

@@ -5,7 +5,8 @@
 import os
 import re
 import stat
-import tempfile
+
+from pypg.util import short_tempdir
 
 
 def _chmod_recursive(path, dir_mode, file_mode):
@@ -80,7 +81,7 @@ def test_start_stop(pg_bin, tmp_path):
 
     # Use a short socket directory under /tmp to stay within the socket path
     # length limit.
-    sockdir = tempfile.mkdtemp(prefix="pgt")
+    sockdir = short_tempdir()
     try:
         with open(os.path.join(data_dir, "postgresql.conf"), "a", encoding="utf-8") as conf:
             conf.write("fsync = off\n")
