@@ -30,7 +30,8 @@ _MAX_HELP_LINE_LENGTH = 95
 def _describe(cmd: Sequence[str], result: CommandResult) -> str:
     return (
         "command: {}\nexit code: {}\nstderr:\n{}\nstdout:\n{}".format(
-            " ".join(cmd), result.returncode, result.stderr, result.stdout
+            " ".join(str(c) for c in cmd),
+            result.returncode, result.stderr, result.stdout
         )
     )
 
