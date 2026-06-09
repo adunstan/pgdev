@@ -7,22 +7,23 @@ import shutil
 
 import pytest
 
-from pypg.util import dir_symlink
+from pypg.util import dir_symlink, short_tempdir
 
 
-def run_test(rewind, test_mode):
+def _run_test(rewind, test_mode, xlog_parent):
     rewind.setup_cluster(test_mode)
 
     test_primary_datadir = rewind.node_primary.data_dir
 
-    # External directory that pg_wal will be symlinked to.  It lives under the
-    # primary node's basedir.
-    primary_xlogdir = os.path.join(rewind.node_primary.basedir, "xlog_primary")
+    # External directory that pg_wal is moved to and linked back from.  It must
+    # have a SHORT path: on Windows a directory junction stores its target path
+    # twice, and the server reads the reparse data into a fixed MAX_PATH-sized
+    # buffer (pgreadlink), so a long target -- such as one under the deep
+    # per-test data directory -- overflows it and the server fails to start
+    # with "could not get junction".  short_tempdir keeps it well within range.
+    primary_xlogdir = os.path.join(xlog_parent, "xlog_primary")
 
-    if os.path.exists(primary_xlogdir):
-        shutil.rmtree(primary_xlogdir)
-
-    # Turn pg_wal into a symlink.
+    # Turn pg_wal into a symlink (a junction on Windows).
     pg_wal = os.path.join(test_primary_datadir, "pg_wal")
     print(f"moving {pg_wal} to {primary_xlogdir}")
     shutil.move(pg_wal, primary_xlogdir)
@@ -70,4 +71,8 @@ def run_test(rewind, test_mode):
 # Run the test in both modes.
 @pytest.mark.parametrize("mode", ["local", "remote"])
 def test_004_pg_xlog_symlink(rewind, mode):
-    run_test(rewind, mode)
+    xlog_parent = short_tempdir()
+    try:
+        _run_test(rewind, mode, xlog_parent)
+    finally:
+        shutil.rmtree(xlog_parent, ignore_errors=True)
