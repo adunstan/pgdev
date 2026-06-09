@@ -6,6 +6,7 @@ rewind, and all the files that were added on the primary should be removed.
 """
 
 import os
+import platform
 import re
 
 import pytest
@@ -60,7 +61,7 @@ def run_test(rewind, test_mode):
                      "standby_file4"),
         "in standby4")
     # Skip testing .DS_Store files on macOS to avoid risk of side effects
-    if os.uname().sysname != "Darwin":
+    if platform.system() != "Darwin":
         append_to_file(
             os.path.join(test_standby_datadir, "tst_standby_dir", ".DS_Store"),
             "macOS system file")

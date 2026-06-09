@@ -11,7 +11,7 @@ import re
 import signal
 import time
 
-from pypg.util import TIMEOUT_DEFAULT
+from pypg.util import TIMEOUT_DEFAULT, WINDOWS_OS
 
 WALSENDER_TIMEOUT_PATTERN = (
     r"WARNING: .* terminating walsender process due to "
@@ -123,8 +123,11 @@ def test_038_walsnd_shutdown_timeout(create_pg):
 
     sub_session.do("ABORT;")
 
-    # The next test depends on signalling the publisher with a SIGTERM.  This
-    # framework is unix-only, so we always run it.
+    # The remaining scenario stalls physical replication by sending SIGSTOP to
+    # the standby's walreceiver, which is not portable to Windows; end the test
+    # here on that platform.
+    if WINDOWS_OS:
+        return
 
     node_publisher.start()
 
