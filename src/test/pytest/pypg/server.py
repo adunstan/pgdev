@@ -14,10 +14,8 @@ import shutil
 import signal
 import socket
 import subprocess
-import tempfile
 
 from libpq import ConnStatusType, Session
-from libpq.errors import ConnectionError as PqConnectionError
 
 from .command import CommandResult, PgBin
 from .util import (
@@ -817,51 +815,28 @@ class PostgresServer:
             )
 
     def _attempt_connection(self, connstr, sql):
-        """Connect with *connstr* and (if it succeeds) run *sql*.
+        """Connect with *connstr* via a psql subprocess and run *sql*.
 
-        Returns ``(ok, stdout, stderr)``.  *stderr* aggregates anything libpq
-        writes to the real stderr (fd 2) during the attempt -- which is where
-        authentication-time NOTICE/WARNING messages go, since the in-process
-        Session installs its notice processor only after CONNECTION_OK -- plus
-        post-connect notices and any query error.  This mirrors what psql's
-        stderr would contain in :meth:`connect_ok` / :meth:`connect_fails`.
+        Returns ``(ok, stdout, stderr)`` (psql's exit status, stdout and
+        stderr).  A subprocess -- not the in-process Session -- is used so the
+        child inherits the environment (PGPASSWORD and the like) and performs a
+        real connection handshake: that connection-time behavior is exactly what
+        the auth/SSL tests exercise, and relying on the in-process library to
+        read the environment is not portable.  ``-w`` keeps psql from blocking
+        on a password prompt; ``-XAt`` gives unaligned, tuples-only output.
         """
-        saved_fd2 = os.dup(2)
-        tmp = tempfile.TemporaryFile()
-        os.dup2(tmp.fileno(), 2)
-        stdout = ""
-        notices = ""
-        err = ""
-        sess = None
-        try:
-            sess = Session(connstr=self._full_connstr(connstr), libdir=self.libdir)
-            if sql is not None:
-                res = sess.query(sql)
-                stdout = res.psqlout
-                notices = sess.get_notices_str()
-                err = res.error_message or ""
-                ok = res.error_message is None
-            else:
-                ok = True
-        except PqConnectionError as exc:
-            ok = False
-            err = str(exc)
-        finally:
-            if sess is not None:
-                sess.close()
-            os.dup2(saved_fd2, 2)
-            os.close(saved_fd2)
-            tmp.seek(0)
-            fd2 = tmp.read().decode("utf-8", "replace")
-            tmp.close()
-        return ok, stdout, fd2 + notices + err
+        argv = ["psql", "-w", "-X", "-A", "-t",
+                "-d", self._full_connstr(connstr),
+                "-c", sql if sql is not None else "SELECT 1"]
+        res = self.pg_bin.result(argv)
+        return res.returncode == 0, res.stdout, res.stderr
 
     def connect_ok(self, connstr, test_name, *, sql=None, expected_stdout=None,
                    expected_stderr=None, log_like=None, log_unlike=None):
         """Assert a connection with *connstr* succeeds.
 
-        Connects in-process via libpq (no psql), runs *sql* (default a trivial
-        SELECT), and checks stdout/stderr and the server log.
+        Connects with a psql subprocess, runs *sql* (default a trivial SELECT),
+        and checks stdout/stderr and the server log.
         """
         if sql is None:
             sql = f"SELECT $$connected with {connstr}$$"
