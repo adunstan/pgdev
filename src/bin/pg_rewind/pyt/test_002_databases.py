@@ -7,6 +7,8 @@ the source and target clusters, and that PGDATA permissions are preserved.
 import os
 import stat
 
+from pypg.util import WINDOWS_OS
+
 import pytest
 
 
@@ -86,10 +88,12 @@ def run_test(rewind, test_mode):
         "database names",
     )
 
-    # Permissions on PGDATA should have group permissions.
-    assert check_mode_recursive(
-        rewind.node_primary.data_dir, 0o750, 0o640
-    ), "check PGDATA permissions"
+    # Permissions on PGDATA should have group permissions (unix-only; skipped
+    # on Windows).
+    if not WINDOWS_OS:
+        assert check_mode_recursive(
+            rewind.node_primary.data_dir, 0o750, 0o640
+        ), "check PGDATA permissions"
 
     rewind.clean_rewind_test()
 

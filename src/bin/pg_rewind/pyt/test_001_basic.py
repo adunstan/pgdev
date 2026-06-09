@@ -10,6 +10,8 @@ directory ('local'), a live source server ('remote'), and a WAL archive
 import os
 import stat
 
+from pypg.util import WINDOWS_OS
+
 import pytest
 
 from pypg.command import PgBin
@@ -225,9 +227,10 @@ def run_test(rewind, bindir, test_mode):
         "drop",
     )
 
-    # Permissions on PGDATA should be default.
-    assert check_mode_recursive(rewind.node_primary.data_dir, 0o700, 0o600), \
-        "check PGDATA permissions"
+    # Permissions on PGDATA should be default (unix-only; skipped on Windows).
+    if not WINDOWS_OS:
+        assert check_mode_recursive(rewind.node_primary.data_dir, 0o700, 0o600), \
+            "check PGDATA permissions"
 
     rewind.clean_rewind_test()
 

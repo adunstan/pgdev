@@ -6,6 +6,8 @@ import os
 import re
 import stat
 
+from pypg.util import WINDOWS_OS
+
 
 def _check_mode_recursive(path, dir_mode, file_mode):
     """Check that every entry under *path* has the expected permissions.
@@ -58,8 +60,10 @@ def test_pg_resetwal_basic(pg_bin, create_pg):
         "pg_resetwal -n produces output",
     )
 
-    # Permissions on PGDATA should be default (unix-only).
-    assert _check_mode_recursive(node.data_dir, 0o700, 0o600), "check PGDATA permissions"
+    # Permissions on PGDATA should be default (unix-only; skipped on Windows).
+    if not WINDOWS_OS:
+        assert _check_mode_recursive(node.data_dir, 0o700, 0o600), \
+            "check PGDATA permissions"
 
     pg_bin.command_ok(
         ["pg_resetwal", "--pgdata", node.data_dir],

@@ -7,6 +7,8 @@ permission handling.
 import glob
 import os
 import stat
+
+from pypg.util import WINDOWS_OS
 import subprocess
 
 import pytest
@@ -295,9 +297,10 @@ def test_020_pg_receivewal(pg_bin, pg_config, create_pg):
     assert os.path.exists(completed), \
         "check that previously partial WAL is now complete"
 
-    # Permissions on WAL files should be default
-    assert _check_mode_recursive(stream_dir, 0o700, 0o600), \
-        "check stream dir permissions"
+    # Permissions on WAL files should be default (unix-only; skipped on Windows).
+    if not WINDOWS_OS:
+        assert _check_mode_recursive(stream_dir, 0o700, 0o600), \
+            "check stream dir permissions"
 
     print("# Testing pg_receivewal with slot as starting streaming point")
 
