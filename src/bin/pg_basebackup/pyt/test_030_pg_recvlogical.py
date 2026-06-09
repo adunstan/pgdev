@@ -7,7 +7,7 @@ import re
 import signal
 import subprocess
 
-from pypg.util import poll_until, slurp_file
+from pypg.util import WINDOWS_OS, poll_until, slurp_file
 
 
 def _wait_for_file(path, pattern, offset=0):
@@ -270,10 +270,11 @@ def test_030_pg_recvlogical(create_pg, pg_bin):
 
     # The cluster was initialized without group access, so pg_recvlogical
     # should create the output file as 0600 (-rw-------).
-    mode = oct(os.stat(outfile).st_mode & 0o7777)
-    assert mode == oct(0o600), (
-        "pg_recvlogical output file has no group permissions (0600)"
-    )
+    if not WINDOWS_OS:
+        mode = oct(os.stat(outfile).st_mode & 0o7777)
+        assert mode == oct(0o600), (
+            "pg_recvlogical output file has no group permissions (0600)"
+        )
 
     # Enable group access on the source cluster and its files, then restart
     # so pg_recvlogical observes the updated source cluster permissions.
@@ -303,10 +304,11 @@ def test_030_pg_recvlogical(create_pg, pg_bin):
 
     # With group access enabled on the source cluster, pg_recvlogical should
     # create the output file as 0640 (-rw-r-----).
-    mode = oct(os.stat(outfile).st_mode & 0o7777)
-    assert mode == oct(0o640), (
-        "pg_recvlogical output file respects group permissions (0640)"
-    )
+    if not WINDOWS_OS:
+        mode = oct(os.stat(outfile).st_mode & 0o7777)
+        assert mode == oct(0o640), (
+            "pg_recvlogical output file respects group permissions (0640)"
+        )
 
     node.command_ok(
         [

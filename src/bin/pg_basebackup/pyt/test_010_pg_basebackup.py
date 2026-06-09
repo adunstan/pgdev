@@ -12,6 +12,7 @@ import pytest
 
 from pypg.util import (
     TIMEOUT_DEFAULT,
+    WINDOWS_OS,
     append_to_file,
     dir_symlink,
     short_tempdir,
@@ -143,7 +144,9 @@ def _run_body(create_pg, tempdir):
     try:
         with open(badname, "ab") as fh:
             fh.write(b"test backup of file with non-UTF8 name\n")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # OSError: the filesystem rejected the name.  UnicodeDecodeError:
+        # Windows cannot map the non-UTF8 bytes to a wide-char path at all.
         pass
 
     # set_replication_conf / reload: the default trust pg_hba already permits
@@ -292,8 +295,9 @@ def _run_body(create_pg, tempdir):
         "backup manifest included"
 
     # Permissions on backup should be default (unix-only; skipped on Windows).
-    assert check_mode_recursive(f"{tempdir}/backup", 0o700, 0o600), \
-        "check backup dir permissions"
+    if not WINDOWS_OS:
+        assert check_mode_recursive(f"{tempdir}/backup", 0o700, 0o600), \
+            "check backup dir permissions"
 
     # Only archive_status and summaries directories should be copied in
     # pg_wal/.
@@ -503,19 +507,21 @@ def _run_body(create_pg, tempdir):
         "tablespace was relocated"
 
     # Check the tablespace symlink was updated (unix only; junctions on
-    # Windows don't support -l).
-    found = False
-    for entry in os.listdir(os.path.join(pgdata, "pg_tblspc")):
-        link = f"{tempdir}/backup1/pg_tblspc/{entry}"
-        if os.path.islink(link) and \
-                os.readlink(link) == f"{tempdir}/tbackup/tblspc1":
-            found = True
-            break
-    assert found, "tablespace symlink was updated"
+    # Windows are not reported as symlinks by os.path.islink, and group-access
+    # permission checks do not apply there).
+    if not WINDOWS_OS:
+        found = False
+        for entry in os.listdir(os.path.join(pgdata, "pg_tblspc")):
+            link = f"{tempdir}/backup1/pg_tblspc/{entry}"
+            if os.path.islink(link) and \
+                    os.readlink(link) == f"{tempdir}/tbackup/tblspc1":
+                found = True
+                break
+        assert found, "tablespace symlink was updated"
 
-    # Group access should be enabled on all backup files (unix only).
-    assert check_mode_recursive(f"{tempdir}/backup1", 0o750, 0o640), \
-        "check backup dir permissions"
+        # Group access should be enabled on all backup files.
+        assert check_mode_recursive(f"{tempdir}/backup1", 0o750, 0o640), \
+            "check backup dir permissions"
 
     # Unlogged relation forks other than init should not be copied.
     m = re.search(r"[^/]*/[^/]*/[^/]*$", tblspc1_unlogged_path)
