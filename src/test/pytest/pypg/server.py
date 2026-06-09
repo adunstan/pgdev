@@ -286,12 +286,24 @@ class PostgresServer:
         """
         proc = self._run(
             "pg_ctl", "-D", self.data_dir, "-l", self.logfile, "-w", "start",
-            check=not fail_ok,
+            check=False,
         )
         if proc.returncode == 0:
             self._running = True
             return True
         self._running = self._postmaster_alive()
+        if not fail_ok:
+            # pg_ctl's own output rarely says why; include the server log,
+            # which holds the actual startup error.
+            try:
+                with open(self.logfile, encoding="utf-8", errors="replace") as fh:
+                    log = fh.read()
+            except OSError:
+                log = "(could not read log file)"
+            raise RuntimeError(
+                f'pg_ctl start failed for node "{self.name}":\n{proc.stdout}\n'
+                f"--- {self.logfile} ---\n{log}"
+            )
         return False
 
     def stop(self, mode="fast", fail_ok=False):
