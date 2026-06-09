@@ -75,28 +75,47 @@ def pg_bin(bindir):
     return PgBin(bindir)
 
 
+def _safe_node_name(request):
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", request.node.name)
+
+
 @pytest.fixture
-def test_datadir(request, tmp_path):
+def test_datadir(request, tmp_path_factory):
     """The per-test directory for servers and other test data.
 
     Under the meson/testwrap harness this is rooted at the per-file TESTDATADIR
     (as PostgreSQL::Test::Utils uses for tmp_check); for a standalone pytest run
-    it falls back to pytest's tmp_path.  Using TESTDATADIR rather than pytest's
-    shared pytest-of-<user> base matters because that shared base is
-    concurrently created and rotated by parallel test processes, which makes
-    directory creation (e.g. by initdb) race -- on Windows it fails outright.
+    it falls back to a directory minted from pytest's tmp_path_factory.  Using
+    TESTDATADIR rather than pytest's shared pytest-of-<user> base matters
+    because that base is created with mode 0o700: on Windows that is an
+    owner-only ACL the postmaster's restricted access token cannot use, so
+    server-created paths under it (data dirs, tablespaces) fail with
+    "Permission denied".
 
     TESTDATADIR is shared by every test function in a file, so append a
-    per-function subdirectory (as tmp_path is per-function) to keep functions
-    from colliding on the same data directory.
+    per-function subdirectory to keep functions from colliding.
     """
     root = os.environ.get("TESTDATADIR")
+    safe = _safe_node_name(request)
     if not root:
-        return tmp_path
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", request.node.name)
+        return tmp_path_factory.mktemp(safe, numbered=True)
     path = pathlib.Path(root) / safe
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+@pytest.fixture
+def tmp_path(test_datadir):
+    """Override pytest's built-in tmp_path so per-test scratch space lives
+    under the harness directory (TESTDATADIR) rather than pytest's own base.
+
+    pytest creates its base (pytest-of-<user>) with mode 0o700, which on Windows
+    is an owner-only ACL the postmaster's restricted access token cannot use --
+    initdb, tablespaces and other server-created paths under it then fail with
+    "Permission denied".  Rooting at TESTDATADIR (created by the harness with an
+    inheritable ACL) avoids that and is where servers already live.
+    """
+    return test_datadir
 
 
 def _free_port():
