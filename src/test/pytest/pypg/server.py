@@ -14,8 +14,10 @@ import shutil
 import signal
 import socket
 import subprocess
+import time
 
 from libpq import ConnStatusType, Session
+from libpq.errors import ConnectionError as PqConnectionError
 
 from .command import CommandResult, PgBin
 from .util import (
@@ -757,14 +759,35 @@ class PostgresServer:
 
     # -- query execution (in-process via libpq) -----------------------------
 
+    def _open_session(self, dbname):
+        """Open a Session, retrying briefly past a server that is still
+        starting up or in recovery.
+
+        Just after start()/restart() the server can transiently reject
+        connections with "the database system is starting up" / "... is in
+        recovery mode" before it is ready; those states are temporary for a
+        node that is meant to be up, so retry until the deadline rather than
+        fail the whole test on a startup race.
+        """
+        deadline = time.monotonic() + TIMEOUT_DEFAULT
+        while True:
+            try:
+                return Session(connstr=self.connstr(dbname), libdir=self.libdir)
+            except PqConnectionError as exc:
+                transient = ("is starting up" in str(exc)
+                             or "in recovery mode" in str(exc))
+                if not transient or time.monotonic() > deadline:
+                    raise
+                time.sleep(0.1)
+
     def session(self, dbname="postgres"):
         """Return a cached libpq Session for *dbname*, reconnecting if needed."""
         sess = self._sessions.get(dbname)
-        if sess is None:
-            sess = Session(connstr=self.connstr(dbname), libdir=self.libdir)
+        if sess is None or sess.conn_status() != ConnStatusType.CONNECTION_OK:
+            if sess is not None:
+                sess.close()
+            sess = self._open_session(dbname)
             self._sessions[dbname] = sess
-        elif sess.conn_status() != ConnStatusType.CONNECTION_OK:
-            sess.reconnect()
         return sess
 
     def connect(self, dbname="postgres", user=None, password=None, options=None):
