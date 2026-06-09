@@ -13,6 +13,7 @@ import pytest
 from pypg.util import (
     TIMEOUT_DEFAULT,
     append_to_file,
+    dir_symlink,
     short_tempdir,
     slurp_file,
 )
@@ -426,8 +427,8 @@ def _run_body(create_pg, tempdir):
     # before symlinking, to avoid moving across drives.
     os.rmdir(os.path.join(pgdata, "pg_replslot"))
     os.mkdir(os.path.join(sys_tempdir, "pg_replslot"))
-    os.symlink(os.path.join(sys_tempdir, "pg_replslot"),
-               os.path.join(pgdata, "pg_replslot"))
+    dir_symlink(os.path.join(sys_tempdir, "pg_replslot"),
+                os.path.join(pgdata, "pg_replslot"))
 
     node.start()
 
@@ -435,7 +436,7 @@ def _run_body(create_pg, tempdir):
     # located tempdir to our physical temp location so we can use shorter
     # names for the tablespace directories.
     real_sys_tempdir = os.path.join(sys_tempdir, "tempdir")
-    os.symlink(tempdir, real_sys_tempdir)
+    dir_symlink(tempdir, real_sys_tempdir)
 
     os.mkdir(f"{tempdir}/tblspc1")
     real_ts_dir = f"{real_sys_tempdir}/tblspc1"

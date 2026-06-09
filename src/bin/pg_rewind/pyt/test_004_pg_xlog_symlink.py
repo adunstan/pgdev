@@ -7,6 +7,8 @@ import shutil
 
 import pytest
 
+from pypg.util import dir_symlink
+
 
 def run_test(rewind, test_mode):
     rewind.setup_cluster(test_mode)
@@ -24,7 +26,7 @@ def run_test(rewind, test_mode):
     pg_wal = os.path.join(test_primary_datadir, "pg_wal")
     print(f"moving {pg_wal} to {primary_xlogdir}")
     shutil.move(pg_wal, primary_xlogdir)
-    os.symlink(primary_xlogdir, pg_wal)
+    dir_symlink(primary_xlogdir, pg_wal)
 
     rewind.start_primary()
 

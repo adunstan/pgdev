@@ -22,6 +22,8 @@ import os
 import re
 import shutil
 
+from pypg.util import dir_symlink
+
 
 def _restore_node(node, backup_path, ts_oid, ts_dest):
     """Bring a node's data dir up from a plain-format backup at *backup_path*.
@@ -46,7 +48,7 @@ def _restore_node(node, backup_path, ts_oid, ts_dest):
     src = os.path.realpath(link)
     shutil.copytree(src, ts_dest, symlinks=True)
     os.remove(link)
-    os.symlink(ts_dest, link)
+    dir_symlink(ts_dest, link)
 
     node.append_conf(
         "\n".join(

@@ -67,6 +67,21 @@ def _decode(data):
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def dir_symlink(target, link):
+    """Create *link* as a link to directory *target*.
+
+    On Windows create a junction (via cmd's ``mklink /j``): that is what the
+    server expects for linked directories such as pg_wal, and an ordinary
+    symlink there is read back with an error.  Elsewhere create a real symlink.
+    """
+    if WINDOWS_OS:
+        target = target.replace("/", "\\")
+        link = link.replace("/", "\\")
+        subprocess.run(["cmd", "/c", "mklink", "/j", link, target], check=True)
+    else:
+        os.symlink(target, link)
+
+
 def short_tempdir(prefix="pgt"):
     """Create and return a uniquely-named directory under the system temp area.
 
