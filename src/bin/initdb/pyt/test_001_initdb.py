@@ -102,13 +102,13 @@ def test_program_help_version_options(pg_bin):
     pg_bin.program_options_handling_ok("initdb")
 
 
-def test_initial_failures(pg_bin, tmp_path):
+def test_initial_failures(pg_bin, test_datadir):
     """Various invalid invocations that should fail before any creation."""
-    xlogdir = str(tmp_path / "pgxlog")
-    datadir = str(tmp_path / "data")
+    xlogdir = str(test_datadir / "pgxlog")
+    datadir = str(test_datadir / "data")
 
     pg_bin.command_fails(
-        ["initdb", "--sync-only", str(tmp_path / "nonexistent")],
+        ["initdb", "--sync-only", str(test_datadir / "nonexistent")],
         "sync missing data directory",
     )
 
@@ -130,10 +130,10 @@ def test_initial_failures(pg_bin, tmp_path):
     )
 
 
-def test_successful_creation_and_permissions(pg_bin, tmp_path):
+def test_successful_creation_and_permissions(pg_bin, test_datadir):
     """Successful creation, default permissions, control file and sync."""
-    xlogdir = str(tmp_path / "pgxlog")
-    datadir = str(tmp_path / "data")
+    xlogdir = str(test_datadir / "pgxlog")
+    datadir = str(test_datadir / "data")
     os.mkdir(xlogdir)
     os.mkdir(datadir)
 
@@ -175,8 +175,8 @@ def test_successful_creation_and_permissions(pg_bin, tmp_path):
     pg_bin.command_fails(["initdb", datadir], "existing data directory")
 
 
-def test_sync_method_syncfs(pg_bin, tmp_path, supports_syncfs):
-    datadir = str(tmp_path / "data")
+def test_sync_method_syncfs(pg_bin, test_datadir, supports_syncfs):
+    datadir = str(test_datadir / "data")
     os.mkdir(datadir)
     pg_bin.command_ok(
         ["initdb", "--no-sync", datadir],
@@ -190,9 +190,9 @@ def test_sync_method_syncfs(pg_bin, tmp_path, supports_syncfs):
         pg_bin.command_fails(cmd, "sync method syncfs")
 
 
-def test_group_access(pg_bin, tmp_path):
+def test_group_access(pg_bin, test_datadir):
     """Check group access on PGDATA (Windows/cygwin skipped: Linux only)."""
-    datadir_group = str(tmp_path / "data_group")
+    datadir_group = str(test_datadir / "data_group")
     pg_bin.command_ok(
         ["initdb", "--allow-group-access", datadir_group],
         "successful creation with group access",
@@ -201,19 +201,19 @@ def test_group_access(pg_bin, tmp_path):
         "check PGDATA permissions"
 
 
-def test_locale_provider_icu(pg_bin, tmp_path, with_icu):
+def test_locale_provider_icu(pg_bin, test_datadir, with_icu):
     """ICU locale provider tests, or the no-ICU fallback check."""
     if with_icu:
         pg_bin.command_fails_like(
             ["initdb", "--no-sync", "--locale-provider", "icu",
-             str(tmp_path / "data2")],
+             str(test_datadir / "data2")],
             re.compile(r"initdb: error: locale must be specified if provider is icu"),
             "locale provider ICU requires --icu-locale",
         )
 
         pg_bin.command_ok(
             ["initdb", "--no-sync", "--locale-provider", "icu",
-             "--icu-locale", "en", str(tmp_path / "data3")],
+             "--icu-locale", "en", str(test_datadir / "data3")],
             "option --icu-locale",
         )
 
@@ -229,7 +229,7 @@ def test_locale_provider_icu(pg_bin, tmp_path, with_icu):
                 "--lc-numeric", "C",
                 "--lc-monetary", "C",
                 "--lc-time", "C",
-                str(tmp_path / "data4"),
+                str(test_datadir / "data4"),
             ],
             re.compile(r"^\s+default collation:\s+und\n", re.MULTILINE),
             "options --locale-provider=icu --locale=und --lc-*=C",
@@ -237,7 +237,7 @@ def test_locale_provider_icu(pg_bin, tmp_path, with_icu):
 
         pg_bin.command_fails_like(
             ["initdb", "--no-sync", "--locale-provider", "icu",
-             "--icu-locale", "@colNumeric=lower", str(tmp_path / "dataX")],
+             "--icu-locale", "@colNumeric=lower", str(test_datadir / "dataX")],
             re.compile(r"could not open collator for locale"),
             "fails for invalid ICU locale",
         )
@@ -245,14 +245,14 @@ def test_locale_provider_icu(pg_bin, tmp_path, with_icu):
         pg_bin.command_fails_like(
             ["initdb", "--no-sync", "--locale-provider", "icu",
              "--encoding", "SQL_ASCII", "--icu-locale", "en",
-             str(tmp_path / "dataX")],
+             str(test_datadir / "dataX")],
             re.compile(r"error: encoding mismatch"),
             "fails for encoding not supported by ICU",
         )
 
         pg_bin.command_fails_like(
             ["initdb", "--no-sync", "--locale-provider", "icu",
-             "--icu-locale", "nonsense-nowhere", str(tmp_path / "dataX")],
+             "--icu-locale", "nonsense-nowhere", str(test_datadir / "dataX")],
             re.compile(
                 r'error: locale "nonsense-nowhere" has unknown language "nonsense"'),
             "fails for nonsense language",
@@ -260,7 +260,7 @@ def test_locale_provider_icu(pg_bin, tmp_path, with_icu):
 
         pg_bin.command_fails_like(
             ["initdb", "--no-sync", "--locale-provider", "icu",
-             "--icu-locale", "@colNumeric=lower", str(tmp_path / "dataX")],
+             "--icu-locale", "@colNumeric=lower", str(test_datadir / "dataX")],
             re.compile(
                 r'could not open collator for locale "und-u-kn-lower": '
                 r"U_ILLEGAL_ARGUMENT_ERROR"),
@@ -269,81 +269,81 @@ def test_locale_provider_icu(pg_bin, tmp_path, with_icu):
     else:
         pg_bin.command_fails(
             ["initdb", "--no-sync", "--locale-provider", "icu",
-             str(tmp_path / "data2")],
+             str(test_datadir / "data2")],
             "locale provider ICU fails since no ICU support",
         )
 
 
-def test_locale_provider_builtin(pg_bin, tmp_path):
+def test_locale_provider_builtin(pg_bin, test_datadir):
     pg_bin.command_fails(
         ["initdb", "--no-sync", "--locale-provider", "builtin",
-         str(tmp_path / "data6")],
+         str(test_datadir / "data6")],
         "locale provider builtin fails without --locale",
     )
 
     pg_bin.command_ok(
         ["initdb", "--no-sync", "--locale-provider", "builtin",
-         "--locale", "C", str(tmp_path / "data7")],
+         "--locale", "C", str(test_datadir / "data7")],
         "locale provider builtin with --locale",
     )
 
     pg_bin.command_ok(
         ["initdb", "--no-sync", "--locale-provider", "builtin",
          "--encoding", "UTF-8", "--lc-collate", "C", "--lc-ctype", "C",
-         "--builtin-locale", "C.UTF-8", str(tmp_path / "data8")],
+         "--builtin-locale", "C.UTF-8", str(test_datadir / "data8")],
         "locale provider builtin with --encoding=UTF-8 --builtin-locale=C.UTF-8",
     )
 
     pg_bin.command_fails(
         ["initdb", "--no-sync", "--locale-provider", "builtin",
          "--encoding", "SQL_ASCII", "--lc-collate", "C", "--lc-ctype", "C",
-         "--builtin-locale", "C.UTF-8", str(tmp_path / "data9")],
+         "--builtin-locale", "C.UTF-8", str(test_datadir / "data9")],
         "locale provider builtin with --builtin-locale=C.UTF-8 fails for SQL_ASCII",
     )
 
     pg_bin.command_ok(
         ["initdb", "--no-sync", "--locale-provider", "builtin",
-         "--lc-ctype", "C", "--locale", "C", str(tmp_path / "data10")],
+         "--lc-ctype", "C", "--locale", "C", str(test_datadir / "data10")],
         "locale provider builtin with --lc-ctype",
     )
 
     pg_bin.command_fails(
         ["initdb", "--no-sync", "--locale-provider", "builtin",
-         "--icu-locale", "en", str(tmp_path / "dataX")],
+         "--icu-locale", "en", str(test_datadir / "dataX")],
         "fails for locale provider builtin with ICU locale",
     )
 
     pg_bin.command_fails(
         ["initdb", "--no-sync", "--locale-provider", "builtin",
-         "--icu-rules", '""', str(tmp_path / "dataX")],
+         "--icu-rules", '""', str(test_datadir / "dataX")],
         "fails for locale provider builtin with ICU rules",
     )
 
 
-def test_invalid_provider_and_options(pg_bin, tmp_path):
+def test_invalid_provider_and_options(pg_bin, test_datadir):
     pg_bin.command_fails(
         ["initdb", "--no-sync", "--locale-provider", "xyz",
-         str(tmp_path / "dataX")],
+         str(test_datadir / "dataX")],
         "fails for invalid locale provider",
     )
 
     pg_bin.command_fails(
         ["initdb", "--no-sync", "--locale-provider", "libc",
-         "--icu-locale", "en", str(tmp_path / "dataX")],
+         "--icu-locale", "en", str(test_datadir / "dataX")],
         "fails for invalid option combination",
     )
 
     pg_bin.command_fails(
-        ["initdb", "--no-sync", "--set", "foo=bar", str(tmp_path / "dataX")],
+        ["initdb", "--no-sync", "--set", "foo=bar", str(test_datadir / "dataX")],
         "fails for invalid --set option",
     )
 
 
-def test_set_case_insensitive(pg_bin, tmp_path):
+def test_set_case_insensitive(pg_bin, test_datadir):
     """Multiple --set parameters are added case insensitively."""
     from pypg import util
 
-    datay = str(tmp_path / "dataY")
+    datay = str(test_datadir / "dataY")
     pg_bin.command_ok(
         ["initdb", "--no-sync",
          "--set", "work_mem=128",
@@ -362,9 +362,9 @@ def test_set_case_insensitive(pg_bin, tmp_path):
         "work_mem should be in config"
 
 
-def test_no_data_checksums(pg_bin, tmp_path):
+def test_no_data_checksums(pg_bin, test_datadir):
     """Test the --no-data-checksums flag and that pg_checksums then fails."""
-    datadir_nochecksums = str(tmp_path / "data_no_checksums")
+    datadir_nochecksums = str(test_datadir / "data_no_checksums")
 
     pg_bin.command_ok(
         ["initdb", "--no-data-checksums", datadir_nochecksums],
