@@ -15,8 +15,7 @@ import time
 
 import pytest
 
-from libpq import ConnStatusType
-from pypg.util import TIMEOUT_DEFAULT, poll_until
+from pypg.util import TIMEOUT_DEFAULT
 
 
 def test_041_checkpoint_at_promote(create_pg):
@@ -114,40 +113,27 @@ restart_after_crash = on
     # Done with the async CHECKPOINT session.
     psql_session.close()
 
-    # Kill with SIGKILL, forcing all the backends to restart.
+    # Kill a backend with SIGKILL, forcing all the backends to restart.
+    crash_logpos = node_standby.log_position()
     killme = node_standby.connect("postgres")
-    try:
-        pid = int(killme.query_oneval("SELECT pg_backend_pid()"))
+    pid = int(killme.query_oneval("SELECT pg_backend_pid()"))
+    node_standby.signal_backend(pid, "KILL")
+    killme.close()
 
-        node_standby.signal_backend(pid, "KILL")
-
-        # Wait until the server restarts, finishing consuming output: the
-        # backend we are connected to is terminated by the crash, so the
-        # connection is lost.
-        killme.do_async("SELECT 1;")
-        res = killme.get_async_result()
-        if res is not None:
-            msg = (res.error_message or "") + (res.psqlout or "")
-            assert (
-                killme.conn_status() != ConnStatusType.CONNECTION_OK
-                or msg
-            ), "psql query died successfully after SIGKILL"
-        else:
-            assert killme.conn_status() != ConnStatusType.CONNECTION_OK, \
-                "psql query died successfully after SIGKILL"
-    finally:
-        killme.close()
-
-    # Wait till server finishes restarting.
-    assert poll_until(
-        lambda: node_standby.poll_query_until("SELECT 1", expected="1")
-    ), "server never finished restarting"
+    # Wait for the crash-restart to actually run, then complete.  Gating on the
+    # log is essential: a single "SELECT 1" can be served by the postmaster
+    # before it notices the crash, so polling for one successful query can
+    # return while the server is about to (re-)enter recovery, after which a
+    # fresh connection is rejected with "the database system is in recovery
+    # mode".  These two messages bracket the restart unambiguously.
+    node_standby.wait_for_log(
+        "all server processes terminated; reinitializing", crash_logpos)
+    node_standby.wait_for_log(
+        "database system is ready to accept connections", crash_logpos)
 
     # After recovery, the server should be able to start.  Connect freshly
     # rather than via the cached session: that session was on a backend the
-    # crash terminated, and libpq does not report the connection as broken
-    # until it is next used, so reusing it can fail with "server closed the
-    # connection unexpectedly".
+    # crash terminated.
     check = node_standby.connect("postgres")
     try:
         assert check.query_oneval("select 1") == "1", "psql select 1"
