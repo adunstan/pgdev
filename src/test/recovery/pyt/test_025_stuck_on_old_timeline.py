@@ -8,7 +8,7 @@ standby can follow the new primary (promoted standby).
 """
 
 import os
-import stat
+import sys
 import tempfile
 
 
@@ -23,24 +23,30 @@ def test_025_stuck_on_old_timeline(create_pg):
     node_primary = create_pg(
         "primary", start=False, allows_streaming=True, has_archiving=True)
 
-    # Write a small shell script for cp_history_files: it copies the source
-    # to the target only when the source path contains
-    # "history" (i.e. timeline history files), dropping everything else.
-    archivedir_primary = node_primary.archive_dir
-    fd, cp_history_files = tempfile.mkstemp(prefix="cp_history_files")
-    os.write(fd, b"""#!/bin/sh
-# Copy the file only if it is a timeline history file.
-case "$1" in
-*history*) exec cp "$1" "$2" ;;
-*) exit 0 ;;
-esac
+    # Write a small script for cp_history_files: it copies the source to the
+    # target only when the source path contains "history" (i.e. timeline
+    # history files), dropping everything else.  Use a Python script run by the
+    # interpreter, so the archive_command works on every platform -- a
+    # "#!/bin/sh" script would not run on Windows.
+    archivedir_primary = node_primary.archive_dir.replace("\\", "/")
+    fd, cp_history_files = tempfile.mkstemp(
+        prefix="cp_history_files", suffix=".py")
+    os.write(fd, b"""\
+import shutil
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+if "history" in src:
+    shutil.copyfile(src, dst)
 """)
     os.close(fd)
-    os.chmod(cp_history_files, stat.S_IRWXU)
 
     # Override the default archive_command with our history-only copy script.
+    # Forward slashes keep the command valid in postgresql.conf on Windows.
+    python = sys.executable.replace("\\", "/")
+    script = cp_history_files.replace("\\", "/")
     node_primary.append_conf(f"""
-archive_command = '"{cp_history_files}" "%p" "{archivedir_primary}/%f"'
+archive_command = '"{python}" "{script}" "%p" "{archivedir_primary}/%f"'
 wal_keep_size=128MB
 """)
     node_primary.start()
