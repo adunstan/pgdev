@@ -16,7 +16,7 @@ import socket
 import subprocess
 import time
 
-from libpq import ConnStatusType, Session
+from libpq import Session
 from libpq.errors import ConnectionError as PqConnectionError
 
 from .command import CommandResult, PgBin
@@ -84,7 +84,6 @@ class PostgresServer:
         else:
             self.host = "127.0.0.1"
         self._running = False
-        self._sessions = {}
         self._logfile_generation = 0
         os.makedirs(self.basedir, exist_ok=True)
 
@@ -360,7 +359,6 @@ class PostgresServer:
 
     def stop(self, mode="fast", fail_ok=False):
         """Stop the postmaster.  Returns True on success (or if not running)."""
-        self._close_sessions()
         if not self._running:
             return True
         proc = self._run(
@@ -400,7 +398,6 @@ class PostgresServer:
         relies on.
         """
         pid = self.postmaster_pid()
-        self._close_sessions()
         if pid is not None:
             print(f'### Killing node "{self.name}" using signal 9')
             if WINDOWS_OS:
@@ -416,7 +413,6 @@ class PostgresServer:
         self._running = False
 
     def restart(self, mode="fast"):
-        self._close_sessions()
         self._run("pg_ctl", "-D", self.data_dir, "-l", self.logfile, "-m", mode, "-w", "restart")
         self._running = True
 
@@ -786,14 +782,13 @@ class PostgresServer:
                 time.sleep(0.1)
 
     def session(self, dbname="postgres"):
-        """Return a cached libpq Session for *dbname*, reconnecting if needed."""
-        sess = self._sessions.get(dbname)
-        if sess is None or sess.conn_status() != ConnStatusType.CONNECTION_OK:
-            if sess is not None:
-                sess.close()
-            sess = self._open_session(dbname)
-            self._sessions[dbname] = sess
-        return sess
+        """Open a fresh persistent libpq Session for *dbname*.
+
+        Each call returns its own independent connection -- sessions never share
+        state (GUCs, temp tables, transactions).  The caller owns it and should
+        close() it; otherwise it is dropped when the server is stopped.
+        """
+        return self._open_session(dbname)
 
     def connect(self, dbname="postgres", user=None, password=None, options=None):
         """Open a fresh (uncached) libpq Session with extra connection params.
@@ -916,19 +911,25 @@ class PostgresServer:
             self.log_check(test_name, log_location, log_like=log_like, log_unlike=log_unlike)
 
     def sql(self, query, dbname="postgres"):
-        """Run *query* in-process and return its ResultData (does not raise).
+        """Run *query* on a fresh connection and return its ResultData (does not raise).
 
         See :meth:`safe_sql` for the important caveat about how a multi-statement
         *query* is executed as a single implicit transaction.
         """
-        return self.session(dbname).query(query)
+        sess = self._open_session(dbname)
+        try:
+            return sess.query(query)
+        finally:
+            sess.close()
 
     def safe_sql(self, query, dbname="postgres"):
-        """Run *query* in-process; return its trimmed text output, raising on error.
+        """Run *query* on a fresh connection; return its trimmed text output, raising on error.
 
         Output formatting matches ``psql -A -t`` (rows joined by newlines,
-        columns by ``|``).  The query runs through the in-process libpq
-        :class:`~libpq.session.Session`, not by spawning psql.
+        columns by ``|``).  Each call opens its own short-lived in-process libpq
+        connection, runs the query and closes it, so calls do not share session
+        state (GUCs, temp tables, transaction state); use :meth:`connect` for a
+        persistent session.
 
         IMPORTANT -- multiple statements run in ONE implicit transaction.
         A *query* with several semicolon-separated statements is sent as a single
@@ -943,7 +944,11 @@ class PostgresServer:
         they would not have under psql (e.g. statements meant to run as separate
         transactions will instead see each other's uncommitted effects).
         """
-        return self.session(dbname).query_safe(query)
+        sess = self._open_session(dbname)
+        try:
+            return sess.query_safe(query)
+        finally:
+            sess.close()
 
     def poll_query_until(self, query, expected="t", dbname="postgres", timeout=TIMEOUT_DEFAULT):
         """Run *query* repeatedly until its output equals *expected*."""
@@ -1101,11 +1106,6 @@ class PostgresServer:
         if not poll_until(_found, timeout=timeout):
             raise TimeoutError(f"timed out waiting for log pattern {pattern!r}")
         return len(self.log_content())
-
-    def _close_sessions(self):
-        for sess in self._sessions.values():
-            sess.close()
-        self._sessions.clear()
 
     # -- node-scoped command_* assertions ------------------------------------
 

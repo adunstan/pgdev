@@ -219,8 +219,11 @@ def pg(create_pg):
 
 @pytest.fixture
 def conn(pg):
-    """A libpq Session connected to the ``pg`` server's postgres database."""
-    return pg.session()
+    """A persistent libpq Session connected to the ``pg`` server's postgres
+    database, closed at the end of the test."""
+    sess = pg.connect()
+    yield sess
+    sess.close()
 
 
 @pytest.fixture
