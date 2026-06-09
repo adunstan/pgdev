@@ -61,6 +61,15 @@ def test_007_catcache_inval(create_pg):
         # for functions with name "foofunc".
         psql_session.do_async("SELECT foofunc(1);")
 
+        # Wait until that backend is actually paused at the injection point
+        # before invalidating and waking it.  do_async returns as soon as the
+        # query is sent, so without this explicit wait the wakeup below can run
+        # before the point is reached ("could not find injection point ... to
+        # wake up").  The TAP test instead relies on the latency of spawning a
+        # psql for the CREATE FUNCTION, which the in-process layer does not have.
+        node.wait_for_event(
+            "client backend", "catcache-list-miss-systable-scan-started")
+
         # While the first session is building the catcache list, create a new
         # function that overloads the same name.  This sends a catcache
         # invalidation.
