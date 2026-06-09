@@ -294,11 +294,15 @@ class PostgresServer:
         """A shell command that copies file *src* to *dst*.
 
         *src*/*dst* may embed the archive/restore ``%p``/``%f`` placeholders.
-        On Windows use cmd's ``copy`` with backslash paths; elsewhere ``cp``.
+        Elsewhere this is ``cp`` with forward-slash paths.  On Windows it is
+        cmd's ``copy``; there the path's backslashes must be doubled for the
+        command to work once stored in postgresql.conf and to identify the
+        target file, and both paths are double-quoted to tolerate spaces.
         """
         if WINDOWS_OS:
-            return 'copy "{}" "{}"'.format(
-                src.replace("/", "\\"), dst.replace("/", "\\"))
+            def winpath(p):
+                return p.replace("/", "\\").replace("\\", "\\\\")
+            return f'copy "{winpath(src)}" "{winpath(dst)}"'
         return f'cp "{src}" "{dst}"'
 
     def enable_archiving(self):
