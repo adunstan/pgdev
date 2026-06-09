@@ -326,15 +326,8 @@ PREPARE TRANSACTION 'lock';
         ## RECOVERY CONFLICT 6: Database conflict
         sect = "database conflict"
 
-        # The in-process Session caches one connection per database, so close
-        # the primary's cached test_db session (used by the
-        # safe_sql calls above) so DROP DATABASE is not blocked.  The standby's
-        # psql_standby session must stay connected to test_db: that is the
-        # backend the database recovery conflict cancels.
-        cached = node_primary._sessions.pop(test_db, None)
-        if cached is not None:
-            cached.close()
-
+        # The standby's psql_standby session must stay connected to test_db:
+        # that is the backend the database recovery conflict cancels.
         node_primary.safe_sql(f"DROP DATABASE {test_db};")
 
         node_primary.wait_for_replay_catchup(node_standby)

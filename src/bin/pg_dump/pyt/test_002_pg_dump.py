@@ -4795,15 +4795,16 @@ def _split_sql(sql):
 def _seed_database(node, dbname, create_sql):
     """Send a combined create_sql block to *dbname*, statement by statement.
 
-    Piping the concatenated SQL to psql runs each top-level statement
-    autonomously (its own transaction).  Sending the whole
-    block via one libpq simple query would wrap it in a single transaction,
-    which breaks the CREATE DATABASE / CREATE TABLESPACE statements present
-    here.  So split into individual statements (honoring quoting/dollar-quotes)
-    and run each on its own, matching psql semantics.
+    Sending the whole block as one simple query would wrap it in a single
+    transaction, which breaks the CREATE DATABASE / CREATE TABLESPACE
+    statements present here.  So split into individual statements (honoring
+    quoting/dollar-quotes) and run each on its own.  They share one persistent
+    session so that session GUCs (e.g. allow_in_place_tablespaces) set by an
+    earlier statement persist to a later CREATE TABLESPACE on the same block.
     """
-    for stmt in _split_sql(create_sql):
-        node.safe_sql(stmt, dbname=dbname)
+    with node.connect(dbname=dbname) as sess:
+        for stmt in _split_sql(create_sql):
+            sess.query_safe(stmt)
 
 
 def test_pg_dump(pg, tmp_path):

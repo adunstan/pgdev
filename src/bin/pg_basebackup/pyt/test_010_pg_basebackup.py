@@ -918,11 +918,12 @@ def _run_body(create_pg, tempdir):
         "background process exit message"
 
     # Test that we can back up an in-place tablespace.  CREATE TABLESPACE
-    # cannot run inside a transaction block, so issue the GUC SET as a
-    # separate statement on the same (cached) session rather than as one
-    # multi-statement implicit transaction.
-    node.safe_sql("SET allow_in_place_tablespaces = on;")
-    node.safe_sql("CREATE TABLESPACE tblspc2 LOCATION '';")
+    # can't run in a transaction block and the GUC must be set on the same
+    # connection, so set the GUC and create the tablespace as separate
+    # statements on one persistent session.
+    with node.connect() as ts_sess:
+        ts_sess.query_safe("SET allow_in_place_tablespaces = on")
+        ts_sess.query_safe("CREATE TABLESPACE tblspc2 LOCATION ''")
     node.safe_sql("CREATE TABLE test2 (a int) TABLESPACE tblspc2;"
                    "INSERT INTO test2 VALUES (1234);")
     tblspc_oid = node.safe_sql(

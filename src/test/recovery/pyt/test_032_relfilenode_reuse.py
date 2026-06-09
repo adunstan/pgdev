@@ -7,33 +7,15 @@ is dropped and recreated.
 import re
 
 
-def _disconnect_db(node, dbname):
-    """Close and forget node's cached safe_sql session for *dbname*.
-
-    safe_sql() keeps one long-lived connection per database.  This drops the
-    cached connection so it no longer counts as a session using the
-    database (e.g. for CREATE DATABASE ... TEMPLATE).
-    """
-    sess = node._sessions.pop(dbname, None)
-    if sess is not None:
-        sess.close()
-
-
 def _verify(primary, standby, counter, message):
     """Check that the primary and (after catchup) the standby both report the
     expected single grouped row for the "datab" column.
     """
     query = "SELECT datab, count(*) FROM large GROUP BY 1 ORDER BY 1 LIMIT 10"
-    # safe_sql caches one connection per database; on the standby that
-    # connection may
-    # have been terminated by a recovery conflict (DROP DATABASE replay), so
-    # drop the cached sessions to force a clean reconnect.
-    _disconnect_db(primary, "conflict_db")
     assert primary.safe_sql(query, dbname="conflict_db") == \
         f"{counter}|4000", f"primary: {message}"
 
     primary.wait_for_catchup(standby)
-    _disconnect_db(standby, "conflict_db")
     assert standby.safe_sql(query, dbname="conflict_db") == \
         f"{counter}|4000", f"standby: {message}"
 
@@ -82,9 +64,6 @@ shared_buffers=1MB
         "INSERT INTO large(dataa, datab) SELECT g.i::text, 1 "
         "FROM generate_series(1, 4000) g(i);",
         dbname="conflict_db_template")
-    # safe_sql() caches one connection per database.  Close the cached
-    # template-db connection so it does not block CREATE DATABASE ... TEMPLATE.
-    _disconnect_db(node_primary, "conflict_db_template")
     node_primary.safe_sql(
         "CREATE DATABASE conflict_db TEMPLATE conflict_db_template OID = 50001;")
 
@@ -114,7 +93,6 @@ shared_buffers=1MB
         _cause_eviction(psql_primary, psql_standby)
 
         # drop and recreate database
-        _disconnect_db(node_primary, "conflict_db")
         node_primary.safe_sql("DROP DATABASE conflict_db;")
         node_primary.safe_sql(
             "CREATE DATABASE conflict_db TEMPLATE conflict_db_template "
@@ -156,7 +134,6 @@ shared_buffers=1MB
 
         # move database back / forth (ALTER DATABASE SET TABLESPACE needs no
         # connection to the target database)
-        _disconnect_db(node_primary, "conflict_db")
         node_primary.safe_sql(
             "ALTER DATABASE conflict_db SET TABLESPACE test_tablespace")
         node_primary.safe_sql(
@@ -170,7 +147,6 @@ shared_buffers=1MB
         _verify(node_primary, node_standby, 5,
                 "post move contents as expected")
 
-        _disconnect_db(node_primary, "conflict_db")
         node_primary.safe_sql(
             "ALTER DATABASE conflict_db SET TABLESPACE test_tablespace")
 
@@ -179,7 +155,6 @@ shared_buffers=1MB
         _cause_eviction(psql_primary, psql_standby)
         node_primary.safe_sql("UPDATE large SET datab = 8;",
                                dbname="conflict_db")
-        _disconnect_db(node_primary, "conflict_db")
         node_primary.safe_sql("DROP DATABASE conflict_db")
         node_primary.safe_sql("DROP TABLESPACE test_tablespace")
 

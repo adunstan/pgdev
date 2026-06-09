@@ -45,12 +45,14 @@ def test_002_tablespace(pg):
     node.safe_sql(f"CREATE TABLESPACE regress_ts2 LOCATION '{ts2_location}'")
 
     # In-place tablespaces require allow_in_place_tablespaces.  The GUC must be
-    # set in the same session as the CREATE TABLESPACE; since CREATE TABLESPACE
-    # cannot run in a transaction block, set the GUC in a separate statement on
-    # the same (cached) session, which persists across safe_sql calls.
-    node.safe_sql("SET allow_in_place_tablespaces=on")
-    node.safe_sql("CREATE TABLESPACE regress_ts3 LOCATION ''")
-    node.safe_sql("CREATE TABLESPACE regress_ts4 LOCATION ''")
+    # set in the same session as the CREATE TABLESPACE, but CREATE TABLESPACE
+    # cannot run in a transaction block (and a multi-statement string runs as
+    # one implicit transaction), so issue them as separate statements on one
+    # persistent connection.
+    with node.connect() as sess:
+        sess.query_safe("SET allow_in_place_tablespaces=on")
+        sess.query_safe("CREATE TABLESPACE regress_ts3 LOCATION ''")
+        sess.query_safe("CREATE TABLESPACE regress_ts4 LOCATION ''")
 
     # Create a table and test moving between absolute and in-place tablespaces.
     node.safe_sql("CREATE TABLE t () TABLESPACE regress_ts1")

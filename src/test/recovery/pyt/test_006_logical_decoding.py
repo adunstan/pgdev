@@ -182,13 +182,8 @@ def test_006_logical_decoding(create_pg):
         dbname="otherdb",
     ), "slot never became inactive"
 
-    # One-shot psql invocations leave nothing connected
-    # to otherdb.  Here our helpers use a cached in-process session per database;
-    # close it (and wait out the killed walsender backend) so DROP DATABASE is
-    # not blocked by lingering connections.
-    cached = node_primary._sessions.pop("otherdb", None)
-    if cached is not None:
-        cached.close()
+    # Wait out the killed walsender backend so DROP DATABASE is not blocked by
+    # lingering connections to otherdb.
     assert node_primary.poll_query_until(
         "SELECT NOT EXISTS (SELECT 1 FROM pg_stat_activity "
         "WHERE datname = 'otherdb')"

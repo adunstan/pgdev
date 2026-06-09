@@ -11,16 +11,16 @@ from pypg.util import TIMEOUT_DEFAULT
 def _run_script(node, script):
     """Run a multi-statement SQL script as separate statements.
 
-    The in-process libpq session sends a multi-statement string as a single
-    implicit transaction, which CREATE DATABASE / CREATE TABLESPACE reject.
-    Split on ';' and run each statement separately
-    on the node's cached session so that session GUCs (e.g.
-    allow_in_place_tablespaces) persist across statements.
+    A multi-statement string is sent as a single implicit transaction, which
+    CREATE DATABASE / CREATE TABLESPACE reject, so split on ';' and run each
+    statement on its own.  They share one persistent session so that session
+    GUCs (e.g. allow_in_place_tablespaces) persist across statements.
     """
-    for stmt in script.split(";"):
-        stmt = stmt.strip()
-        if stmt:
-            node.safe_sql(stmt)
+    with node.connect() as sess:
+        for stmt in script.split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                sess.query_safe(stmt)
 
 
 def _test_tablespace(create_pg, strategy):

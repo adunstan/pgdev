@@ -203,12 +203,6 @@ ALTER TABLE tab1 ENABLE REPLICA TRIGGER test1;
     )
     node_subscriber.safe_sql(
         "DROP table tab_gen_to_nogen", dbname="test_pgc_true")
-    # The in-process framework caches a libpq session per database, so close
-    # the cached test_pgc_true session before dropping the database; otherwise
-    # DROP DATABASE fails with "database is being accessed by other users".
-    _sess = node_subscriber._sessions.pop("test_pgc_true", None)
-    if _sess is not None:
-        _sess.close()
     node_subscriber.safe_sql("DROP DATABASE test_pgc_true")
 
     # =====================================================================

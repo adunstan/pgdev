@@ -246,13 +246,15 @@ def test_012_ddlutils(create_pg):
         "SELECT count(*) FROM pg_get_tablespace_ddl(NULL::oid)")
     assert result == "0", "NULL tablespace OID returns no rows"
 
-    # Tablespace name requiring quoting.  CREATE TABLESPACE cannot run inside
-    # a transaction block, so the GUC and the CREATE run as separate
-    # statements on the (persistent) session.
-    node.safe_sql("SET allow_in_place_tablespaces = true")
-    node.safe_sql("""
-        CREATE TABLESPACE "regress_ tblsp" OWNER regress_role_ddl_test1
-          LOCATION ''""")
+    # Tablespace name requiring quoting.  CREATE TABLESPACE can't run in a
+    # transaction block and the GUC must be set on the same connection, so set
+    # the GUC and create the tablespace as separate statements on one
+    # persistent session.
+    with node.connect() as ts_sess:
+        ts_sess.query_safe("SET allow_in_place_tablespaces = true")
+        ts_sess.query_safe("""
+            CREATE TABLESPACE "regress_ tblsp" OWNER regress_role_ddl_test1
+              LOCATION ''""")
     result = node.safe_sql(
         "SELECT * FROM pg_get_tablespace_ddl('regress_ tblsp')")
     assert '"regress_ tblsp"' in result, "tablespace name is quoted"

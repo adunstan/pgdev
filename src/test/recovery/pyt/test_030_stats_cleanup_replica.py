@@ -8,14 +8,6 @@
 """
 
 
-def _close_cached_session(node, dbname):
-    # Close (and forget) the cached libpq session for *dbname*, so it no
-    # longer holds a persistent backend on that database.
-    sess = node._sessions.pop(dbname, None)
-    if sess is not None:
-        sess.close()
-
-
 def _populate_standby_stats(node_primary, node_standby, connect_db, schema):
     # create objects on primary
     node_primary.safe_sql(
@@ -170,13 +162,6 @@ def test_030_stats_cleanup_replica(create_pg):
         node_standby, sect, "test", dboid, tableoid, funcoid, "t"
     )
     _test_standby_db_stats_status(node_standby, sect, "test", dboid, "t")
-
-    # This framework caches one long-lived session per database, so close
-    # both nodes' connections to "test" before dropping
-    # it; otherwise DROP DATABASE fails with "database is being accessed by
-    # other users".
-    _close_cached_session(node_standby, "test")
-    _close_cached_session(node_primary, "test")
 
     node_primary.safe_sql("DROP DATABASE test", "postgres")
     sect = "post dropdb"

@@ -196,13 +196,14 @@ def test_009_twophase(create_pg, tmp_path):
     cur_primary, cur_standby = node_paris, node_london
     cur_primary_name = cur_primary.name
 
-    # because london is not running at this point, we can't use syncrep commit
-    # on this command.  COMMIT PREPARED must run outside a transaction block,
-    # so the SET is issued as its own statement (the session persists across
-    # safe_sql calls); a multi-statement string would wrap both in one
-    # implicit transaction under libpq's simple query protocol.
-    cur_primary.safe_sql("SET synchronous_commit = off")
-    cur_primary.safe_sql("COMMIT PREPARED 'xact_009_10'")
+    # london is not running at this point, so we must not commit synchronously
+    # here (it would wait forever for the down standby).  COMMIT PREPARED
+    # cannot run in a transaction block, and a multi-statement string is one
+    # implicit transaction, so set synchronous_commit and commit as separate
+    # statements on one persistent connection.
+    with cur_primary.connect() as sess:
+        sess.query_safe("SET synchronous_commit = off")
+        sess.query_safe("COMMIT PREPARED 'xact_009_10'")
 
     # restart old primary as new standby
     cur_standby.enable_streaming(cur_primary)
@@ -277,13 +278,15 @@ def test_009_twophase(create_pg, tmp_path):
     # while primary is down.
     ###########################################################################
 
-    # To ensure the standby is caught up.  Under libpq's simple query
-    # protocol a multi-statement string is one implicit transaction, so the
-    # CREATE TABLE would not commit (and replicate) before the PREPARE; issue
-    # the SET and CREATE TABLE as their own statements (psql splits on ';').
-    cur_primary.safe_sql("SET synchronous_commit='remote_apply'")
-    cur_primary.safe_sql("CREATE TABLE t_009_tbl_standby_mvcc (id int, msg text)")
-    cur_primary.safe_sql(f"""
+    # Set synchronous_commit='remote_apply' so the standby is caught up.  The
+    # GUC must persist across the CREATE TABLE and the prepared transaction,
+    # and neither may share an implicit transaction with the SET, so run them
+    # as separate statements on one persistent connection.
+    with cur_primary.connect() as sess:
+        sess.query_safe("SET synchronous_commit='remote_apply'")
+        sess.query_safe(
+            "CREATE TABLE t_009_tbl_standby_mvcc (id int, msg text)")
+        sess.query_safe(f"""
 	BEGIN;
 	INSERT INTO t_009_tbl_standby_mvcc VALUES (1, 'issued to {cur_primary_name}');
 	SAVEPOINT s1;
@@ -303,11 +306,12 @@ def test_009_twophase(create_pg, tmp_path):
 
     # Commit the transaction in primary
     cur_primary.start()
-    # To ensure the standby is caught up.  COMMIT PREPARED must run outside a
-    # transaction block, so the SET is its own statement on the persistent
-    # session.
-    cur_primary.safe_sql("SET synchronous_commit='remote_apply'")
-    cur_primary.safe_sql("COMMIT PREPARED 'xact_009_standby_mvcc'")
+    # Set synchronous_commit='remote_apply' so the standby is caught up.
+    # COMMIT PREPARED cannot run in a transaction block, so set the GUC and
+    # commit as separate statements on one persistent connection.
+    with cur_primary.connect() as sess:
+        sess.query_safe("SET synchronous_commit='remote_apply'")
+        sess.query_safe("COMMIT PREPARED 'xact_009_standby_mvcc'")
 
     # Still not visible to the old snapshot
     psql_out = standby_session.query_oneval(
@@ -454,10 +458,10 @@ def test_009_twophase(create_pg, tmp_path):
     cur_primary.safe_sql("CHECKPOINT")
 
     cur_primary.safe_sql("select pg_current_wal_insert_lsn()")
-    # psql splits on ';': "CREATE TABLE test()" autocommits, then the
-    # BEGIN..PREPARE block prepares test1.  As a single libpq simple-query
-    # string the whole batch would be one implicit transaction ending in
-    # PREPARE, so "test" would never commit; issue them separately.
+    # "CREATE TABLE test()" autocommits on its own, then the BEGIN..PREPARE
+    # block prepares test1.  As a single multi-statement string the whole
+    # batch would be one implicit transaction ending in PREPARE, so "test"
+    # would never commit; issue them as separate statements.
     cur_primary.safe_sql("CREATE TABLE test()")
     cur_primary.safe_sql(
         "BEGIN; CREATE TABLE test1(); PREPARE TRANSACTION 'foo';")

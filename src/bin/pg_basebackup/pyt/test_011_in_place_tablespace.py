@@ -16,11 +16,13 @@ def test_011_in_place_tablespace(create_pg, tmp_path):
     # Set up an instance.
     node = create_pg("main", allows_streaming=True)
 
-    # Create an in-place tablespace.  These run as separate statements so that
-    # CREATE TABLESPACE is not wrapped in an implicit transaction block (the
-    # cached session persists the SET across calls).
-    node.safe_sql("SET allow_in_place_tablespaces = on")
-    node.safe_sql("CREATE TABLESPACE inplace LOCATION ''")
+    # Create an in-place tablespace.  CREATE TABLESPACE can't run in a
+    # transaction block and the GUC must be set on the same connection, so set
+    # the GUC and create the tablespace as separate statements on one
+    # persistent session.
+    with node.connect() as ts_sess:
+        ts_sess.query_safe("SET allow_in_place_tablespaces = on")
+        ts_sess.query_safe("CREATE TABLESPACE inplace LOCATION ''")
 
     # Back it up.
     backupdir = os.path.join(tempdir, "backup")

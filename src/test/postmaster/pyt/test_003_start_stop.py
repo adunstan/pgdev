@@ -92,7 +92,6 @@ def test_003_start_stop(create_pg):
 
     # Test that the dead-end backends don't prevent the server from stopping.
     # Use pg_ctl directly so a short stop timeout can be enforced.
-    node._close_sessions()
     node.pg_bin.command_ok(
         ["pg_ctl", "-D", node.data_dir, "-m", "fast", "-w",
          "-t", str(stop_timeout), "stop"],

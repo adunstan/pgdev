@@ -5,9 +5,9 @@
 Mostly for rejection via exception, because this scenario cannot be covered
 with *.sql/*.out regress tests.
 
-Setup statements that run before the trigger fires use the cached session via
-safe_sql, while every post-enable check uses connect_ok, which opens a fresh
-libpq connection (firing the login trigger each time) and captures the
+Setup statements run before the login trigger is created, so they fire
+nothing; every post-enable check uses connect_ok, which opens a fresh libpq
+connection (firing the login trigger each time) and captures the
 connection-time NOTICE on stderr.
 
 These tests require Unix-domain sockets, so the module is skipped when the
@@ -32,8 +32,8 @@ def test_006_login_trigger(create_pg):
     )
     node.start()
 
-    # Create temporary roles and log table (trigger not yet present, so these
-    # run via the cached session and fire nothing).
+    # Create temporary roles and log table (trigger not yet created, so these
+    # fire nothing).
     node.safe_sql(
         "CREATE ROLE regress_alice WITH LOGIN;"
         "CREATE ROLE regress_mallory WITH LOGIN;"
@@ -54,8 +54,8 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;"""
     )
 
-    # CREATE EVENT TRIGGER: the cached session's connection logged in before
-    # the trigger existed, so nothing fires here.
+    # CREATE EVENT TRIGGER: this connection logged in before the trigger
+    # existed, so nothing fires here.
     node.safe_sql(
         "CREATE EVENT TRIGGER on_login_trigger "
         "ON login EXECUTE PROCEDURE on_login_proc();"
@@ -98,17 +98,17 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;"""
     # mallory, who is intentionally never connected (a FATAL there could cause a
     # timing-dependent panic).
 
-    # Check that Alice's login record is here -- insert #4 (postgres).
+    # Check that Alice's login record is here, and that mallory never appears
+    # (mallory's login is rejected, so no row is inserted) -- insert #4
+    # (postgres).
     node.connect_ok(
         "",
         "select *",
         sql="SELECT * FROM user_logins ORDER BY id;",
         expected_stdout=r"3\|regress_alice",
+        stdout_unlike=r"regress_mallory",
         expected_stderr=r"You are welcome",
     )
-    # And that mallory never appears.
-    rows = node.safe_sql("SELECT * FROM user_logins ORDER BY id;")
-    assert "regress_mallory" not in rows, "mallory never logged in"
 
     # Check total number of successful logins so far -- insert #5.
     node.connect_ok(
@@ -127,7 +127,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;"""
         expected_stderr=r"You are welcome",
     )
 
-    # With the trigger gone, the cached session (or a fresh one) fires nothing.
+    # With the trigger gone, a fresh connection fires nothing.
     node.safe_sql(
         "DROP TABLE user_logins;"
         "DROP FUNCTION on_login_proc;"

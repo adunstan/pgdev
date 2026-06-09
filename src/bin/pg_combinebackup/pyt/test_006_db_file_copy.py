@@ -41,12 +41,6 @@ def test_006_db_file_copy(create_pg, tmp_path):
     # Now make some database changes.  DROP/CREATE DATABASE cannot run inside
     # a transaction block, so issue them as separate top-level statements (the
     # in-process Session wraps a multi-statement string in one transaction).
-    #
-    # The CREATE TABLE above opened (and the framework cached) a session
-    # connected to "lakh"; close it so it does not block DROP DATABASE.
-    lakh_sess = primary._sessions.pop("lakh", None)
-    if lakh_sess is not None:
-        lakh_sess.close()
     primary.safe_sql("DROP DATABASE lakh;")
     primary.safe_sql(
         "CREATE DATABASE lakh OID = 100000 STRATEGY = FILE_COPY")

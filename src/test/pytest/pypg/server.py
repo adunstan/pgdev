@@ -857,11 +857,14 @@ class PostgresServer:
         return res.returncode == 0, res.stdout, res.stderr
 
     def connect_ok(self, connstr, test_name, *, sql=None, expected_stdout=None,
+                   stdout_unlike=None,
                    expected_stderr=None, log_like=None, log_unlike=None):
         """Assert a connection with *connstr* succeeds.
 
         Connects with a psql subprocess, runs *sql* (default a trivial SELECT),
-        and checks stdout/stderr and the server log.
+        and checks stdout/stderr and the server log.  *expected_stdout* (if
+        given) must match the query output; *stdout_unlike* (if given) must
+        not.
         """
         if sql is None:
             sql = f"SELECT $$connected with {connstr}$$"
@@ -873,6 +876,11 @@ class PostgresServer:
         if expected_stdout is not None:
             assert re.search(expected_stdout, stdout), (
                 f"{test_name}: stdout matches {expected_stdout!r}, got {stdout!r}"
+            )
+        if stdout_unlike is not None:
+            assert not re.search(stdout_unlike, stdout), (
+                f"{test_name}: stdout must not match {stdout_unlike!r}, "
+                f"got {stdout!r}"
             )
         if expected_stderr is not None:
             assert re.search(expected_stderr, stderr), (
