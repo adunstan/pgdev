@@ -10,9 +10,7 @@
 # it's already restarted.
 #
 
-import os
 import re
-import signal
 
 from libpq import ConnStatusType
 
@@ -110,7 +108,7 @@ def test_013_crash_restart(create_pg):
 
         # kill once with QUIT - we expect the backend to exit, while emitting
         # an error message first.
-        os.kill(pid, signal.SIGQUIT)
+        node.signal_backend(pid, "QUIT")
 
         # Check that the killme session sees the killed backend as having been
         # terminated.
@@ -175,7 +173,7 @@ def test_013_crash_restart(create_pg):
 
         # kill with SIGKILL this time - we expect the backend to exit, without
         # being able to emit an error message.
-        os.kill(pid, signal.SIGKILL)
+        node.signal_backend(pid, "KILL")
 
         # Check that the killme session sees the server as being terminated.
         # No WARNING, because signal handlers aren't being run on SIGKILL.

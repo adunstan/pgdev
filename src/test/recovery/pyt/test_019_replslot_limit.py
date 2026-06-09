@@ -11,7 +11,7 @@ import re
 import signal
 import time
 
-from pypg.util import TIMEOUT_DEFAULT
+from pypg.util import TIMEOUT_DEFAULT, WINDOWS_OS
 
 
 def wait_for_slot_catchup(node, slot_name, mode, target_lsn):
@@ -310,8 +310,13 @@ max_slot_wal_keep_size = 0
     node_primary2.stop()
     node_standby.stop()
 
+    # The remaining cases freeze the walsender/walreceiver with SIGSTOP/SIGCONT,
+    # which is not portable to Windows; end the test here on that platform.
+    if WINDOWS_OS:
+        return
+
     # Get a slot terminated while the walsender is active
-    # We do this by sending SIGSTOP to the walsender.  Skip this on Windows.
+    # We do this by sending SIGSTOP to the walsender.
     node_primary3 = create_pg(
         "primary3", allows_streaming=True, initdb_extra=["--wal-segsize=1"])
     node_primary3.append_conf("""

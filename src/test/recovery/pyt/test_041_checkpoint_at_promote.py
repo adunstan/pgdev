@@ -11,7 +11,6 @@ standby is completed, and the node should be able to restart properly.
 """
 
 import os
-import signal
 import time
 
 import pytest
@@ -120,7 +119,7 @@ restart_after_crash = on
     try:
         pid = int(killme.query_oneval("SELECT pg_backend_pid()"))
 
-        os.kill(pid, signal.SIGKILL)
+        node_standby.signal_backend(pid, "KILL")
 
         # Wait until the server restarts, finishing consuming output: the
         # backend we are connected to is terminated by the crash, so the

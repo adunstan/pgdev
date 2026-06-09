@@ -2,16 +2,14 @@
 
 """Test remove of temporary files after a crash."""
 
-import os
 import re
-import signal
 
 from pypg.util import poll_until
 
 
-def _kill_backend(pid):
-    """SIGKILL a specific backend, mirroring 'pg_ctl kill KILL <pid>'."""
-    os.kill(pid, signal.SIGKILL)
+def _kill_backend(node, pid):
+    """Kill a specific backend via 'pg_ctl kill KILL <pid>'."""
+    node.signal_backend(pid, "KILL")
 
 
 def _wait_backend_blocked_on_lock(session, pid):
@@ -121,7 +119,7 @@ def _crash_cycle(node, remove_temp_files):
         _wait_backend_blocked_on_lock(killme2, pid)
 
         # Kill the 1st backend with SIGKILL.
-        _kill_backend(pid)
+        _kill_backend(node, pid)
 
         # The 1st psql session is now dead; close it.
         killme.close()

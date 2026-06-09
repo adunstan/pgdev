@@ -29,6 +29,36 @@ from .util import (
 )
 
 
+def _pid_alive(pid):
+    """Whether process *pid* currently exists.
+
+    On Windows ``os.kill(pid, 0)`` would terminate the process (any signal maps
+    to TerminateProcess), so probe with OpenProcess/GetExitCodeProcess instead.
+    """
+    if WINDOWS_OS:
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 class PostgresServer:
     """One initdb'd data directory and the server running on it."""
 
@@ -348,14 +378,18 @@ class PostgresServer:
         pid = self.postmaster_pid()
         if pid is None:
             return False
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            return False
-        return True
+        return _pid_alive(pid)
+
+    def signal_backend(self, pid, signame):
+        """Send signal *signame* (e.g. "QUIT", "KILL", "TERM") to process *pid*.
+
+        Uses ``pg_ctl kill``, which delivers the signal through the server's own
+        mechanism and so works on every platform (Windows has no Unix signals).
+        """
+        self._run("pg_ctl", "kill", signame, str(pid))
 
     def kill9(self):
-        """SIGKILL the postmaster (no chance to clean up).
+        """Hard-kill the postmaster (no chance to clean up).
 
         Postmaster children normally exit on their own once the postmaster is
         gone; a backend stuck in a CPU-bound loop is the exception this test
@@ -365,10 +399,16 @@ class PostgresServer:
         self._close_sessions()
         if pid is not None:
             print(f'### Killing node "{self.name}" using signal 9')
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            if WINDOWS_OS:
+                # No SIGKILL on Windows; terminate the process tree forcibly.
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
         self._running = False
 
     def restart(self, mode="fast"):
