@@ -8,9 +8,10 @@ stderr.  Failures raise AssertionError so pytest/pgtap report them.
 """
 
 import os
-import subprocess
 from dataclasses import dataclass
 from typing import Optional, Sequence
+
+from .util import run_captured
 
 
 @dataclass
@@ -59,19 +60,13 @@ class PgBin:
         """Run *cmd* (list) and capture its result. cmd[0] is resolved in bindir."""
         argv = [self._resolve(cmd[0]), *map(str, cmd[1:])]
         print("# Running: " + " ".join(argv))
-        proc = subprocess.run(
-            argv,
-            env=self._env(extra_env),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            # Programs may emit non-UTF-8 bytes (e.g. LATIN1 object names);
-            # decode leniently rather than crash on output we only regex-match.
-            errors="replace",
-            check=False,
-        )
-        return CommandResult(proc.returncode, proc.stdout, proc.stderr)
+        # Capture via files, not pipes: a program that launches a server (e.g.
+        # "pg_ctl start") leaves the postmaster holding the pipe open on
+        # Windows, which would deadlock the read.  Output is decoded leniently
+        # since programs may emit non-UTF-8 bytes (e.g. LATIN1 object names)
+        # that we only regex-match.
+        returncode, stdout, stderr = run_captured(argv, env=self._env(extra_env))
+        return CommandResult(returncode, stdout, stderr)
 
     # -- command_* assertions -----------------------------------------------
 

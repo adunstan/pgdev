@@ -20,7 +20,7 @@ from libpq import ConnStatusType, Session
 from libpq.errors import ConnectionError as PqConnectionError
 
 from .command import CommandResult, PgBin
-from .util import TIMEOUT_DEFAULT, USE_UNIX_SOCKETS, poll_until
+from .util import TIMEOUT_DEFAULT, USE_UNIX_SOCKETS, poll_until, run_captured
 
 
 class PostgresServer:
@@ -165,14 +165,14 @@ class PostgresServer:
     def _run(self, *argv, check=True):
         argv = [self._resolve(argv[0]), *map(str, argv[1:])]
         print("# Running: " + " ".join(argv))
-        proc = subprocess.run(
-            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False
-        )
-        if check and proc.returncode != 0:
+        # Capture via files, not pipes: "pg_ctl start" leaves a postmaster
+        # holding the pipe open on Windows, which would deadlock the read.
+        returncode, stdout, _ = run_captured(argv, combine_stderr=True)
+        if check and returncode != 0:
             raise RuntimeError(
-                f"command failed ({proc.returncode}): {' '.join(argv)}\n{proc.stdout}"
+                f"command failed ({returncode}): {' '.join(argv)}\n{stdout}"
             )
-        return proc
+        return CommandResult(returncode, stdout, "")
 
     def _resolve(self, name):
         candidate = os.path.join(self._bindir, name)

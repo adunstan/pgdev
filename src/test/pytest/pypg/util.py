@@ -5,6 +5,7 @@
 import os
 import secrets
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -17,6 +18,41 @@ TIMEOUT_DEFAULT = int(os.environ.get("PG_TEST_TIMEOUT_DEFAULT") or "180")
 # sockets even on Windows.
 WINDOWS_OS = sys.platform in ("win32", "cygwin")
 USE_UNIX_SOCKETS = (not WINDOWS_OS) or ("PG_TEST_USE_UNIX_SOCKETS" in os.environ)
+
+
+def run_captured(argv, *, env=None, combine_stderr=False, timeout=None):
+    """Run *argv*, capturing output through temporary files instead of pipes.
+
+    Returns ``(returncode, stdout, stderr)`` as text.  With *combine_stderr*,
+    stderr is folded into stdout and the returned stderr is ``""``.
+
+    Output is captured to temporary files rather than ``subprocess.PIPE``
+    because of how starting a server behaves on Windows: ``pg_ctl start``
+    launches a postmaster that inherits and holds open the write end of the
+    parent's stdout/stderr pipe for its entire lifetime.  Reading such a pipe
+    to end-of-file -- as subprocess does to collect output -- then blocks until
+    the postmaster exits, i.e. forever.  A regular file handle has no
+    end-of-file dependency on the writer staying alive, so the parent reads the
+    captured output as soon as the launched program returns.
+    """
+    out = tempfile.TemporaryFile()
+    err = subprocess.STDOUT if combine_stderr else tempfile.TemporaryFile()
+    try:
+        proc = subprocess.run(
+            argv, env=env, stdout=out, stderr=err, timeout=timeout, check=False
+        )
+        out.seek(0)
+        stdout = out.read().decode("utf-8", "replace")
+        if combine_stderr:
+            stderr = ""
+        else:
+            err.seek(0)
+            stderr = err.read().decode("utf-8", "replace")
+    finally:
+        out.close()
+        if err is not subprocess.STDOUT:
+            err.close()
+    return proc.returncode, stdout, stderr
 
 
 def short_tempdir(prefix="pgt"):
