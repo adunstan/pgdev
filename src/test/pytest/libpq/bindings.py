@@ -17,6 +17,7 @@ microsecond clock and socket poll deadline are explicitly ``c_int64``.
 """
 
 import ctypes
+import sys
 from ctypes import (
     CFUNCTYPE,
     POINTER,
@@ -181,7 +182,15 @@ def load(libpath):
     Returns the configured ``ctypes.CDLL``.  Raises if a function is missing
     from the library or if any prototype failed to apply.
     """
-    lib = ctypes.CDLL(libpath)
+    if sys.platform == "win32":
+        # libpq.dll's dependent DLLs (OpenSSL, zlib, libintl, ...) are not
+        # beside it; they are found via PATH.  winmode=0 selects the standard
+        # Windows search order, which consults PATH, whereas the ctypes default
+        # since Python 3.8 (LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) does not and so
+        # fails to resolve them.
+        lib = ctypes.CDLL(libpath, winmode=0)
+    else:
+        lib = ctypes.CDLL(libpath)
     for name, (restype, argtypes) in PROTOTYPES.items():
         fn = getattr(lib, name)  # AttributeError here = symbol missing
         fn.restype = restype

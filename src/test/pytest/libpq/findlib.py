@@ -70,6 +70,7 @@ def find_lib_or_die(lib, libpath=None, systempath=True):
     search_paths = list(libpath or [])
     if systempath:
         search_paths.extend(_system_lib_paths())
+    search_paths = _with_windows_bindir(search_paths)
 
     patterns = _lib_patterns(lib)
 
@@ -84,6 +85,25 @@ def find_lib_or_die(lib, libpath=None, systempath=True):
     raise RuntimeError(
         f"find_lib_or_die: unable to find lib{lib} in: " + ", ".join(search_paths)
     )
+
+
+def _with_windows_bindir(paths):
+    """On Windows, add the sibling ``bin`` of each search directory.
+
+    The runtime DLL is installed in ``bin`` there, while ``lib`` (which is what
+    ``pg_config --libdir`` reports) holds only the import library.  Elsewhere
+    the list is returned unchanged.
+    """
+    if sys.platform not in ("win32", "cygwin"):
+        return paths
+    expanded = []
+    for directory in paths:
+        if directory not in expanded:
+            expanded.append(directory)
+        sibling_bin = os.path.join(os.path.dirname(directory.rstrip("\\/")), "bin")
+        if sibling_bin not in expanded:
+            expanded.append(sibling_bin)
+    return expanded
 
 
 def _lib_patterns(lib):
