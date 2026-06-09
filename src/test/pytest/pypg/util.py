@@ -42,17 +42,29 @@ def run_captured(argv, *, env=None, combine_stderr=False, timeout=None):
             argv, env=env, stdout=out, stderr=err, timeout=timeout, check=False
         )
         out.seek(0)
-        stdout = out.read().decode("utf-8", "replace")
+        stdout = _decode(out.read())
         if combine_stderr:
             stderr = ""
         else:
             err.seek(0)
-            stderr = err.read().decode("utf-8", "replace")
+            stderr = _decode(err.read())
     finally:
         out.close()
         if err is not subprocess.STDOUT:
             err.close()
     return proc.returncode, stdout, stderr
+
+
+def _decode(data):
+    """Decode captured output as text, translating newlines like text mode.
+
+    Programs may emit non-UTF-8 bytes (e.g. LATIN1 object names) that we only
+    regex-match, so decode leniently.  Reading a file gives no universal-newline
+    handling, so fold CRLF/CR to LF to match what text-mode capture produced and
+    what tests expect.
+    """
+    text = data.decode("utf-8", "replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def short_tempdir(prefix="pgt"):
