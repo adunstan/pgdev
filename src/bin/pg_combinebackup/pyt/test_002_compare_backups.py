@@ -45,9 +45,17 @@ def _restore_node(node, backup_path, ts_oid, ts_dest):
     # wherever the backup relocated the tablespace; we move it under this
     # node's own area so the two restored nodes don't collide.
     link = os.path.join(data_path, "pg_tblspc", ts_oid)
-    src = os.path.realpath(link)
-    shutil.copytree(src, ts_dest, symlinks=True)
-    remove_dir_symlink(link)
+    if os.path.islink(link):
+        # POSIX (and a Windows symlink): the link still points at the backup's
+        # tablespace location; copy it out and repoint the link.
+        src = os.path.realpath(link)
+        shutil.copytree(src, ts_dest, symlinks=True)
+        remove_dir_symlink(link)
+    else:
+        # Windows: shutil.copytree does not preserve the junction, so the
+        # tablespace contents were copied into pg_tblspc/<oid> as a real
+        # directory.  Move that directory to its destination.
+        shutil.move(link, ts_dest)
     dir_symlink(ts_dest, link)
 
     node.append_conf(
