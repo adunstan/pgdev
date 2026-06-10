@@ -22,7 +22,7 @@ def _find_file(root, name_re):
     return None
 
 
-def test_004_subscription(create_pg, tmp_path):
+def test_004_subscription(create_pg, pg_bin, tmp_path):
     # Can be changed to test the other modes.
     mode = os.environ.get("PG_TEST_PG_UPGRADE_MODE") or "--copy"
 
@@ -68,7 +68,7 @@ def test_004_subscription(create_pg, tmp_path):
 
     # pg_upgrade will fail because the new cluster has insufficient
     # max_active_replication_origins.
-    new_sub.command_checks_all(
+    pg_bin.command_checks_all(
         [
             "pg_upgrade",
             "--no-sync",
@@ -119,7 +119,7 @@ def test_004_subscription(create_pg, tmp_path):
 
     # pg_upgrade will fail because the new cluster has insufficient
     # max_replication_slots.
-    new_sub.command_checks_all(
+    pg_bin.command_checks_all(
         [
             "pg_upgrade",
             "--no-sync",
@@ -203,7 +203,7 @@ def test_004_subscription(create_pg, tmp_path):
 
     old_sub.stop()
 
-    new_sub.command_checks_all(
+    pg_bin.command_checks_all(
         [
             "pg_upgrade",
             "--no-sync",
@@ -361,7 +361,7 @@ def test_004_subscription(create_pg, tmp_path):
     # origin's remote lsn, subscription's running status, failover option, and
     # retain_dead_tuples option.
     # ------------------------------------------------------
-    new_sub.command_ok(
+    pg_bin.command_ok(
         [
             "pg_upgrade",
             "--no-sync",

@@ -41,7 +41,7 @@ def command_ok_or_fails_like(pg_bin, cmd, expected_stdout, expected_stderr, test
     "mode",
     ["--clone", "--copy", "--copy-file-range", "--link", "--swap"],
 )
-def test_mode(create_pg, tmp_path, mode):
+def test_mode(create_pg, pg_bin, tmp_path, mode):
     old = create_pg("old", start=False)
     new = create_pg("new", start=False)
     # pg_upgrade connects to the clusters over localhost TCP on Windows.
@@ -125,7 +125,7 @@ def test_mode(create_pg, tmp_path, mode):
     os.chdir(tmp_path)
     try:
         result = command_ok_or_fails_like(
-            new.pg_bin,
+            pg_bin,
             [
                 "pg_upgrade", "--no-sync",
                 "--old-datadir", old.data_dir,
