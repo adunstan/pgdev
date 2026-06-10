@@ -87,7 +87,10 @@ def _make_files(basedir, files):
     file_opts = []
     if files:
         for fn in sorted(files):
-            arg = os.path.join(basedir, fn)
+            # Forward slashes: pgbench echoes the script path back ("script N:
+            # <path>" / "type: <path>"), and the expectations match it with
+            # ".*/<name>", so a Windows backslash path would not match.
+            arg = os.path.join(basedir, fn).replace("\\", "/")
             file_opts += ["--file", arg]
             filename = re.sub(r"@\d+$", "", arg)
             if os.path.exists(filename):
