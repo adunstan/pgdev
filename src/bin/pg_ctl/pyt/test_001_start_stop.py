@@ -5,6 +5,7 @@
 import os
 import re
 import stat
+import time
 
 from pypg.util import WINDOWS_OS, short_tempdir
 
@@ -86,12 +87,20 @@ def test_start_stop(pg_bin, tmp_path):
         with open(os.path.join(data_dir, "postgresql.conf"), "a", encoding="utf-8") as conf:
             conf.write("fsync = off\n")
             conf.write("listen_addresses = ''\n")
-            conf.write(f"unix_socket_directories = '{sockdir}'\n")
+            # Forward slashes: backslashes in the postgresql.conf string value
+            # are mangled, so the socket directory would be wrong on Windows.
+            conf.write(
+                f"unix_socket_directories = '{sockdir.replace(chr(92), '/')}'\n")
 
         log_file = str(tmp_path / "001_start_stop_server.log")
         ctlcmd = ["pg_ctl", "start", "--pgdata", data_dir, "--log", log_file]
         pg_bin.command_like(ctlcmd, re.compile(r"done.*server started", re.S), "pg_ctl start")
 
+        # On Windows pg_ctl needs more than its ~2 second slop time to notice
+        # the already-running postmaster; without the wait the second start
+        # spuriously succeeds instead of failing.
+        if WINDOWS_OS:
+            time.sleep(3)
         pg_bin.command_fails(
             ["pg_ctl", "start", "--pgdata", data_dir],
             "second pg_ctl start fails",
