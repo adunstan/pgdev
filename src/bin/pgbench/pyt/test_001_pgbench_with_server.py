@@ -1655,7 +1655,7 @@ def check_pgbench_logs(directory, prefix, nb, min_lines, max_lines, line_re):
     """Check per-thread log files and their contents."""
     logs = _list_files(directory, rf"^{prefix}\..*$")
     assert len(logs) == nb, "number of log files"
-    name_re = re.compile(rf"/{prefix}\.\d+(\.\d+)?$")
+    name_re = re.compile(rf"[\\/]{prefix}\.\d+(\.\d+)?$")
     assert len([log for log in logs if name_re.search(log)]) == nb, \
         "file name format"
 
