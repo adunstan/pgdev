@@ -4,6 +4,8 @@
 
 import os
 
+from pypg.util import WINDOWS_OS
+
 
 def _create_extension(ext_dir, ext_name, directory=None):
     """Write a .control and a --1.0.sql file for *ext_name* under *ext_dir*."""
@@ -49,13 +51,24 @@ def test_extension_control_path(create_pg, tmp_path):
     os.makedirs(os.path.join(ext_dir, ext_name2))
     _create_extension(ext_dir, ext_name2, directory=ext_name2)
 
-    # Unix-only port: canonicalized path equals the directory itself, and the
-    # path separator is ":".
-    ext_dir_canonicalized = ext_dir
-    sep = ":"
+    # The GUC path-list separator is ":" on Unix but ";" on Windows (":"
+    # collides with drive letters).  pg_available_extensions reports the
+    # canonicalized path, which on Windows uses forward slashes.  Backslashes
+    # in the postgresql.conf string value must be doubled so the configuration
+    # parser preserves them.
+    if WINDOWS_OS:
+        sep = ";"
+        ext_dir_canonicalized = ext_dir.replace("\\", "/")
+        ext_dir_conf = ext_dir.replace("\\", "\\\\")
+        ext_dir2_conf = ext_dir2.replace("\\", "\\\\")
+    else:
+        sep = ":"
+        ext_dir_canonicalized = ext_dir
+        ext_dir_conf = ext_dir
+        ext_dir2_conf = ext_dir2
 
     node.append_conf(
-        f"extension_control_path = '$system{sep}{ext_dir}{sep}{ext_dir2}'\n"
+        f"extension_control_path = '$system{sep}{ext_dir_conf}{sep}{ext_dir2_conf}'\n"
     )
 
     # Start node
