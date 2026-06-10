@@ -140,13 +140,15 @@ def _run_body(create_pg, tempdir):
     # filesystems (macOS, and some Windows ANSI code pages) reject this
     # filename, in which case we quietly proceed without this bit of coverage.
     os.makedirs(f"{tempdir}/pgdata", exist_ok=True)
-    badname = os.path.join(tempdir.encode(), b"pgdata", b"FOO\xe0\xe0\xe0BAR")
     try:
+        badname = os.path.join(tempdir.encode(), b"pgdata", b"FOO\xe0\xe0\xe0BAR")
         with open(badname, "ab") as fh:
             fh.write(b"test backup of file with non-UTF8 name\n")
     except (OSError, UnicodeDecodeError):
         # OSError: the filesystem rejected the name.  UnicodeDecodeError:
-        # Windows cannot map the non-UTF8 bytes to a wide-char path at all.
+        # Windows cannot map the non-UTF8 bytes to a wide-char path at all --
+        # on some builds even joining the byte path raises this, so the join
+        # is inside the try too.
         pass
 
     # set_replication_conf / reload: the default trust pg_hba already permits
