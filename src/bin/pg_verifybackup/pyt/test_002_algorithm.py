@@ -10,7 +10,11 @@ from pypg.util import slurp_file
 
 
 def _test_checksums(primary, fmt, algorithm):
-    backup_path = os.path.join(primary.backup_dir, fmt, algorithm)
+    # Forward slashes: pg_basebackup creates the target directory with
+    # pg_mkdir_p, which splits on "/", so a backslash path would not have its
+    # intermediate <fmt> directory created.
+    backup_path = "/".join(
+        [primary.backup_dir.replace("\\", "/"), fmt, algorithm])
     backup = [
         "pg_basebackup",
         "--pgdata", backup_path,
