@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from pypg.util import short_tempdir
+from pypg.util import short_tempdir, WINDOWS_OS
 
 
 def _tar_portability_options(tar):
@@ -244,8 +244,11 @@ def test_003_corruption(scenario, create_pg, tmp_path):
 
     name = scenario["name"]
 
-    # needs_unix_permissions scenarios are skipped on Windows; we run on POSIX
-    # so they always execute.
+    # The *_fails scenarios make a file or directory unreadable with chmod(0)
+    # and expect pg_verifybackup to report it.  Windows ignores those mode bits,
+    # so the backup still verifies and the scenario cannot be exercised there.
+    if scenario.get("needs_unix_permissions") and WINDOWS_OS:
+        pytest.skip("scenario requires UNIX file permissions")
 
     # Take a backup and check that it verifies OK.
     backup_path = str(tmp_path / name)
