@@ -119,8 +119,13 @@ def slurp_file(path, offset=0):
 
 
 def append_to_file(path, text):
-    """Append *text* to *path* (creating it if needed)."""
-    with open(path, "a", encoding="utf-8") as fh:
+    """Append *text* to *path* (creating it if needed).
+
+    newline="" disables newline translation so the bytes are written exactly
+    as given: on Windows the default text mode turns "\\n" into "\\r\\n", which
+    corrupts files with a strict line format such as backup_label.
+    """
+    with open(path, "a", encoding="utf-8", newline="") as fh:
         fh.write(text)
 
 
