@@ -57,7 +57,9 @@ def _check_pg_config(pg_config, define):
 
 
 def _wal_path(node, walfile):
-    return os.path.join(node.data_dir, "pg_wal", walfile)
+    # Forward slashes: pg_waldump splits a WAL path on "/" to find the
+    # directory, so a Windows backslash path would not be located.
+    return "/".join([node.data_dir.replace("\\", "/"), "pg_wal", walfile])
 
 
 def _run_waldump(pg_bin, args):
@@ -107,7 +109,7 @@ def _generate_archive(tar, tar_p_flags, archive, directory, compression_flags):
     assert proc.returncode == 0, "tar archive created"
 
 
-def test_pg_waldump_basic(pg_bin, create_pg, pg_config):
+def test_pg_waldump_basic(pg_bin, create_pg, pg_config, tempdir_short):
     tar = _find_tar()
     tar_p_flags = _tar_portability_options(tar)
 
@@ -281,8 +283,9 @@ ROLLBACK;
     node.safe_sql("CREATE DATABASE d1")
     node.safe_sql("DROP DATABASE d1")
 
-    tblspc_path = os.path.join(node.basedir, "ts1_loc")
-    os.makedirs(tblspc_path, exist_ok=True)
+    # Use a short location: on Windows the tablespace junction's target must be
+    # short, and forward slashes avoid a malformed junction.
+    tblspc_path = tempdir_short.replace("\\", "/")
     node.safe_sql(f"CREATE TABLESPACE ts1 LOCATION '{tblspc_path}'")
     node.safe_sql("DROP TABLESPACE ts1")
 

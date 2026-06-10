@@ -77,7 +77,9 @@ max_wal_senders = 4
         datname = current_database()"""
     )
 
-    walfile = os.path.join(node.data_dir, "pg_wal", walfile_name)
+    # Forward slashes: pg_waldump splits a WAL path on "/" to find the
+    # directory, so a Windows backslash path would not be located.
+    walfile = "/".join([node.data_dir.replace("\\", "/"), "pg_wal", walfile_name])
     tmp_folder = str(node.basedir)
     raw_dir = os.path.join(tmp_folder, "raw")
 
