@@ -1100,11 +1100,16 @@ class PostgresServer:
             return fh.read()
 
     def log_position(self):
-        """Return the current size of the log file, for use as an offset."""
-        try:
-            return os.path.getsize(self.logfile)
-        except FileNotFoundError:
-            return 0
+        """Return the current end position in the log, for use as an offset.
+
+        This is the character length of :meth:`log_content` (which reads the
+        file in text mode, normalising CRLF to LF) rather than the raw byte
+        size.  The offset is later used to slice ``log_content()[offset:]``, so
+        it must be a position in that normalised text: on Windows the log file
+        has CRLF line endings, and a byte offset would overshoot the folded
+        text and skip past the lines being checked.
+        """
+        return len(self.log_content())
 
     def log_contains(self, pattern, offset=0):
         """Return True if *pattern* matches the log at/after byte *offset*."""
