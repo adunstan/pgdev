@@ -152,18 +152,26 @@ def service_setup(pg, tmp_path):
     with open(srvfile_nested_2, "a") as fh:
         fh.write(f"servicefile={srvfile_default}\n")
 
+    # Use forward slashes for every path.  Several of these go into connection
+    # strings as a servicefile= value, where libpq treats backslash as an
+    # escape character and would mangle a Windows path; forward slashes are a
+    # valid path separator on Windows for files, environment values and
+    # libpq's own servicefile bookkeeping, so they work everywhere.
+    def fwd(path):
+        return str(path).replace("\\", "/")
+
     return {
-        "td": td,
-        "valid": str(srvfile_valid),
-        "empty": str(srvfile_empty),
-        "default": str(srvfile_default),
-        "missing": str(srvfile_missing),
-        "nested": str(srvfile_nested),
-        "nested_2": str(srvfile_nested_2),
+        "td": fwd(td),
+        "valid": fwd(srvfile_valid),
+        "empty": fwd(srvfile_empty),
+        "default": fwd(srvfile_default),
+        "missing": fwd(srvfile_missing),
+        "nested": fwd(srvfile_nested),
+        "nested_2": fwd(srvfile_nested_2),
         # PGSYSCONFDIR is the fallback directory lookup of the service file.
         # PGSERVICEFILE is forced to a default (empty) location so the test
         # never looks at a home directory.
-        "base_env": {"PGSYSCONFDIR": str(td), "PGSERVICEFILE": str(srvfile_empty)},
+        "base_env": {"PGSYSCONFDIR": fwd(td), "PGSERVICEFILE": fwd(srvfile_empty)},
         "libdir": pg.libdir,
     }
 
