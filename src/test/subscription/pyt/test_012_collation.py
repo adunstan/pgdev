@@ -4,7 +4,18 @@
 ICU).
 """
 
+import os
+
 import pytest
+
+# Nondeterministic collations require ICU.  Gate on the build's with_icu flag
+# (as the Perl test does) rather than a catalog query: pg_collation can contain
+# ICU rows even when the server was built without a usable ICU provider, so the
+# catalog check would let the test run and then fail at CREATE COLLATION.
+pytestmark = pytest.mark.skipif(
+    os.environ.get("with_icu") != "yes",
+    reason="ICU not supported by this build",
+)
 
 
 def test_012_collation(create_pg):
@@ -18,12 +29,6 @@ def test_012_collation(create_pg):
         "subscriber",
         initdb_extra=["--locale=C", "--encoding=UTF8"],
     )
-
-    # Skip if this build has no ICU collation provider available.
-    if node_subscriber.safe_sql(
-        "SELECT count(*)>0 FROM pg_collation WHERE collprovider='i'"
-    ) != "t":
-        pytest.skip("ICU not supported by this build")
 
     publisher_connstr = (
         f"host={node_publisher.host} port={node_publisher.port} dbname=postgres"
