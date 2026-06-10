@@ -228,10 +228,12 @@ def test_001_ssltests(create_pg, ssl_server):
 
     if not libressl:
         # Keylogging is not supported with LibreSSL.
-        tempdir = str(node.basedir)
+        # Forward slashes: these paths go into connection strings as a
+        # sslkeylogfile= value, where libpq would mangle Windows backslashes.
+        tempdir = str(node.basedir).replace("\\", "/")
 
         # Connect should work with a given sslkeylogfile
-        keytxt = os.path.join(tempdir, "key.txt")
+        keytxt = tempdir + "/key.txt"
         node.connect_ok(
             f"{common_connstr} sslrootcert={_ssl('root+server_ca.crt')} "
             f"sslkeylogfile={keytxt} sslmode=require",
