@@ -20,6 +20,9 @@ def test_001_basic(create_pg, tmp_path):
     gzip = os.environ.get("GZIP_PROGRAM")
     if not gzip:
         pytest.skip("gzip not available")
+    # The command is stored in postgresql.conf and run by the server; use
+    # forward slashes so backslashes in the Windows path are not mangled.
+    gzip = gzip.replace("\\", "/")
 
     # allows_streaming=True sets up postgresql.conf for replication.  The
     # cluster uses trust auth, so backupuser can connect without extra
@@ -49,7 +52,8 @@ def test_001_basic(create_pg, tmp_path):
     # Configure basebackup_to_shell.command and reload the configuration file.
     backup_path = str(tmp_path / "backup")
     os.mkdir(backup_path)
-    shell_command = f'"{gzip}" --fast > "{backup_path}/%f.gz"'
+    backup_path_fwd = backup_path.replace("\\", "/")
+    shell_command = f'"{gzip}" --fast > "{backup_path_fwd}/%f.gz"'
     node.append_conf(f"basebackup_to_shell.command='{shell_command}'")
     node.reload()
 
@@ -69,7 +73,7 @@ def test_001_basic(create_pg, tmp_path):
     )
 
     # Reconfigure to restrict access and require a detail.
-    shell_command = f'"{gzip}" --fast > "{backup_path}/%d.%f.gz"'
+    shell_command = f'"{gzip}" --fast > "{backup_path_fwd}/%d.%f.gz"'
     node.append_conf(f"basebackup_to_shell.command='{shell_command}'")
     node.append_conf("basebackup_to_shell.required_role='trustworthy'")
     node.reload()
