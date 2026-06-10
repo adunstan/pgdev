@@ -7,6 +7,8 @@
 import os
 import re
 
+from pypg.util import enable_localhost_tcp
+
 
 def _find_file(root, name_re):
     """Return the first path under *root* whose name matches *name_re*."""
@@ -30,9 +32,12 @@ def test_003_logical_slots(create_pg, pg_bin):
     # Initialize old cluster
     oldpub = create_pg("oldpub", start=False, allows_streaming="logical")
     oldpub.append_conf("autovacuum = off")
+    # pg_upgrade connects to the clusters over localhost TCP on Windows.
+    enable_localhost_tcp(oldpub)
 
     # Initialize new cluster
     newpub = create_pg("newpub", start=False, allows_streaming="logical")
+    enable_localhost_tcp(newpub)
 
     # During upgrade, when pg_restore performs CREATE DATABASE, bgwriter or
     # checkpointer may flush buffers and hold a file handle for the system

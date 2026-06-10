@@ -95,6 +95,30 @@ def remove_dir_symlink(link):
         os.unlink(link)
 
 
+def enable_localhost_tcp(node):
+    """Make *node* also listen on localhost TCP (no-op except on Windows).
+
+    pg_upgrade connects to the clusters it starts over localhost TCP on Windows
+    -- it never uses Unix sockets there (see the ``#if !defined(WIN32)`` guard
+    in src/bin/pg_upgrade/server.c).  A node passed to pg_upgrade must therefore
+    listen on TCP even when the suite is otherwise running over Unix sockets
+    (PG_TEST_USE_UNIX_SOCKETS), which sets listen_addresses=''.  Appending this
+    later wins, while the Unix socket the framework uses stays available.
+
+    We listen on the name "localhost" rather than the literal "127.0.0.1" so
+    the server binds exactly what the client resolves.  pg_upgrade passes no
+    host on Windows, so libpq connects to its default (localhost), which on an
+    IPv6-enabled host resolves to ::1 first.  Binding only 127.0.0.1 would leave
+    the ::1 candidate refused; pg_upgrade's parallel task framework waits on the
+    connection socket with select() but without an exception set, so on Windows
+    a refused async connect is never reported and it hangs forever.  Binding
+    "localhost" covers every address the client may try (and degrades to just
+    127.0.0.1 where IPv6 is unavailable), so the first candidate always lands.
+    """
+    if WINDOWS_OS:
+        node.append_conf("listen_addresses = 'localhost'")
+
+
 def short_tempdir(prefix="pgt"):
     """Create and return a uniquely-named directory under the system temp area.
 

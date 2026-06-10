@@ -18,6 +18,8 @@ import glob
 import os
 import re
 
+from pypg.util import enable_localhost_tcp
+
 
 # A workload that consumes multixids.  The purpose of this is to
 # generate some multixids in the old cluster, so that we can test
@@ -291,6 +293,9 @@ def test_007_multixact_conversion(pg_bin, create_pg, bindir, tmp_path):
     # pre-v19 cluster.
     old = create_pg("basic_oldnode", start=False, initdb_extra=["-k"])
     new = create_pg("basic_newnode", start=False)
+    # pg_upgrade connects to the clusters over localhost TCP on Windows.
+    enable_localhost_tcp(old)
+    enable_localhost_tcp(new)
 
     print(f"# old installation is version {old_version}")
 
@@ -321,6 +326,9 @@ def test_007_multixact_conversion(pg_bin, create_pg, bindir, tmp_path):
 
     old = create_pg("wraparound_oldnode", start=False, initdb_extra=["-k"])
     new = create_pg("wraparound_newnode", start=False)
+    # pg_upgrade connects to the clusters over localhost TCP on Windows.
+    enable_localhost_tcp(old)
+    enable_localhost_tcp(new)
 
     # Reset the old cluster to just before multixid and 32-bit offset
     # wraparound.

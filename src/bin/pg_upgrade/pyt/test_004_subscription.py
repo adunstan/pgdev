@@ -9,6 +9,8 @@ import os
 import re
 import shutil
 
+from pypg.util import enable_localhost_tcp
+
 
 def _find_file(root, name_re):
     """Return the path of a file under *root* whose name matches *name_re*."""
@@ -34,6 +36,10 @@ def test_004_subscription(create_pg, tmp_path):
     # Initialize the new subscriber
     new_sub = create_pg("new_sub", allows_streaming="physical", start=False)
     newbindir = new_sub.bindir
+
+    # pg_upgrade connects to the upgraded clusters over localhost TCP on Windows.
+    enable_localhost_tcp(old_sub)
+    enable_localhost_tcp(new_sub)
 
     # In a VPATH build, we'll be started in the source directory, but we want
     # to run pg_upgrade in the build directory so that any files generated

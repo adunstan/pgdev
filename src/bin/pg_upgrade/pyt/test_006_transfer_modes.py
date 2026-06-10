@@ -7,6 +7,8 @@ import re
 
 import pytest
 
+from pypg.util import enable_localhost_tcp
+
 
 def check_extension(node, extension_name):
     """Return True if *extension_name* is available on *node*."""
@@ -42,6 +44,9 @@ def command_ok_or_fails_like(pg_bin, cmd, expected_stdout, expected_stderr, test
 def test_mode(create_pg, tmp_path, mode):
     old = create_pg("old", start=False)
     new = create_pg("new", start=False)
+    # pg_upgrade connects to the clusters over localhost TCP on Windows.
+    enable_localhost_tcp(old)
+    enable_localhost_tcp(new)
 
     # --swap can't be used to upgrade from versions older than 10, but this
     # framework only ever runs against the current build, so the old cluster is

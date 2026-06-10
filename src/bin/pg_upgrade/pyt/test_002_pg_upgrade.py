@@ -27,7 +27,7 @@ import subprocess
 import pytest
 
 from pypg.regress import pg_regress_available, run_pg_regress
-from pypg.util import slurp_file
+from pypg.util import enable_localhost_tcp, slurp_file
 
 # Repository root, derived from this file's location
 # (.../src/bin/pg_upgrade/pyt/test_002_pg_upgrade.py).
@@ -252,6 +252,8 @@ def test_002_pg_upgrade(create_pg, pg_bin, tmp_path):
     # The create_pg fixture passes --locale=C and --encoding=UTF8 by default;
     # the explicit encoding/locale/provider opts above override those.
     oldnode = create_pg("old_node", start=False, initdb_extra=old_initdb_params)
+    # pg_upgrade connects to the clusters over localhost TCP on Windows.
+    enable_localhost_tcp(oldnode)
     # Override log_statement=all set by the init helper.  This avoids large
     # amounts of log traffic that slow this test down even more when run under
     # valgrind.
@@ -316,6 +318,7 @@ def test_002_pg_upgrade(create_pg, pg_bin, tmp_path):
     new_initdb_params += ["--encoding", "SQL_ASCII"]
     new_initdb_params += ["--locale-provider", "libc"]
     newnode = create_pg("new_node", start=False, initdb_extra=new_initdb_params)
+    enable_localhost_tcp(newnode)
     # Avoid unnecessary log noise
     newnode.append_conf("log_statement = none")
     # Stabilize stats for comparison.

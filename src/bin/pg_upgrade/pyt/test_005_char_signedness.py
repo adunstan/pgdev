@@ -4,6 +4,8 @@
 
 import os
 
+from pypg.util import enable_localhost_tcp
+
 
 def test_005_char_signedness(pg_bin, create_pg, bindir, tmp_path):
     # Can be changed to test the other modes
@@ -13,6 +15,9 @@ def test_005_char_signedness(pg_bin, create_pg, bindir, tmp_path):
     # stopped and the new cluster freshly initdb'd, so neither is started.
     old = create_pg("old", start=False)
     new = create_pg("new", start=False)
+    # pg_upgrade connects to the clusters over localhost TCP on Windows.
+    enable_localhost_tcp(old)
+    enable_localhost_tcp(new)
 
     # Check the default char signedness of both the old and the new clusters.
     # Newly created clusters unconditionally use 'signed'.
