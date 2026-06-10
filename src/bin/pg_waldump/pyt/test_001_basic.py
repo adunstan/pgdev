@@ -428,7 +428,8 @@ $$;
     ]
 
     for scenario in scenarios:
-        path = scenario["path"]
+        # pg_waldump splits the path on "/", so feed it forward slashes.
+        path = scenario["path"].replace("\\", "/")
 
         if scenario["is_archive"] and (not tar):
             # skip "tar command is not available"
