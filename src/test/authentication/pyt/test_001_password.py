@@ -576,8 +576,11 @@ def _run_body(node):
         "connection succeeds with no password expiration warning",
     )
 
-    # Test SYSTEM_USER <> NULL with parallel workers.
-    sess = node.connect(user="scram_role")
+    # Test SYSTEM_USER <> NULL with parallel workers.  Pass the password
+    # explicitly rather than via PGPASSWORD: this is an in-process libpq
+    # connection, and the in-process library does not portably read the
+    # environment (which is why connect_ok/connect_fails shell out to psql).
+    sess = node.connect(user="scram_role", password="pass")
     try:
         sess.do(
             "TRUNCATE sysuser_data;",
