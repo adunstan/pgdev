@@ -6,10 +6,12 @@ Covers the connection options and their environment variables (PGSERVICE /
 PGSERVICEFILE / PGSYSCONFDIR, and the "service" / "servicefile" connection
 keywords).
 
-The connection is made in-process through a libpq
-:class:`~libpq.session.Session`: a successful connection runs the SELECT and
-checks its output, a failed connection raises ConnectionError whose message we
-match.
+Connections are made with a psql subprocess so that the service environment
+variables are inherited the way a real client sees them; a successful
+connection runs the SELECT and checks its output, a failed connection exits
+non-zero with an error message we match.  (An in-process libpq connection is
+not used here: the in-process library does not portably read the environment,
+and on Windows it cannot connect to the server's socket from this process.)
 
 The service file points at the real, started ``pg`` server.  The framework's
 environment setup clears the PG* connection variables, so the only connection
@@ -24,12 +26,9 @@ from contextlib import contextmanager
 
 import pytest
 
-from libpq import Session
-from libpq.errors import ConnectionError as PqConnectionError
-
 # The login role: the cluster uses trust auth, so any user connects.  We pin it
-# explicitly in every connection string so that Session does not have to inject
-# a "user=" keyword (which would corrupt the URI-form connection strings).
+# explicitly in every connection string so that nothing has to inject a
+# "user=" keyword (which would corrupt the URI-form connection strings).
 USER = getpass.getuser()
 
 
@@ -67,40 +66,48 @@ def _uri_user(uri):
     return f"{uri}{sep}user={USER}"
 
 
-def _connect_ok(libdir, connstr, expected, **env):
-    """Open a Session with *connstr*; assert it connects and SELECTs *expected*."""
+def _psql(node, connstr, sql):
+    """Run psql with *connstr* verbatim and return ``(ok, stdout, stderr)``.
+
+    The connection string is passed as-is (no host/port prepended), so the
+    service / servicefile under test fully determines the connection target.
+    psql is a subprocess, so it inherits PGSERVICE / PGSERVICEFILE /
+    PGSYSCONFDIR from the environment.
+    """
+    res = node.pg_bin.result(
+        ["psql", "-w", "-X", "-A", "-q", "-t", "-d", connstr, "-c", sql]
+    )
+    return res.returncode == 0, res.stdout, res.stderr
+
+
+def _connect_ok(node, connstr, expected, **env):
+    """Assert psql connects with *connstr* and its output matches *expected*."""
     with _env(**env):
-        sess = Session(connstr=connstr, libdir=libdir)
-        try:
-            out = sess.query_safe(f"SELECT '{expected}'")
-        finally:
-            sess.close()
+        ok, out, err = _psql(node, connstr, f"SELECT '{expected}'")
+    assert ok, f"connection should succeed for {connstr!r}: got {err!r}"
     assert re.search(expected, out), f"stdout matches for {connstr!r}: got {out!r}"
 
 
-def _connect_fails(libdir, connstr, pattern, **env):
-    """Open a Session with *connstr*; assert it fails with *pattern* in the error."""
+def _connect_fails(node, connstr, pattern, **env):
+    """Assert psql fails to connect with *connstr* and *pattern* is in the error."""
     with _env(**env):
-        with pytest.raises(PqConnectionError) as excinfo:
-            Session(connstr=connstr, libdir=libdir).close()
-    assert re.search(pattern, str(excinfo.value)), (
-        f"error matches /{pattern}/ for {connstr!r}: got {excinfo.value!r}"
+        ok, _out, err = _psql(node, connstr, "SELECT 1")
+    assert not ok, f"connection should fail for {connstr!r}"
+    assert re.search(pattern, err), (
+        f"error matches /{pattern}/ for {connstr!r}: got {err!r}"
     )
 
 
-def _connect_servicefile_is(libdir, connstr, expected_servicefile, **env):
-    """Open a Session; assert it connects and libpq's resolved servicefile matches.
+def _connect_servicefile_is(node, connstr, expected_servicefile, **env):
+    """Assert psql connects and the service file it resolved matches.
 
-    libpq exposes the service file it actually used as the "servicefile"
-    connection option (what psql shows as :SERVICEFILE).
+    psql exposes the service file libpq actually used as the :SERVICEFILE
+    variable.
     """
     with _env(**env):
-        sess = Session(connstr=connstr, libdir=libdir)
-        try:
-            sess.query_safe("SELECT 1")
-            actual = sess.conninfo_value("servicefile")
-        finally:
-            sess.close()
+        ok, out, err = _psql(node, connstr, r"\echo :SERVICEFILE")
+    assert ok, f"connection should succeed for {connstr!r}: got {err!r}"
+    actual = out.strip()
     assert actual == expected_servicefile, (
         f"resolved servicefile for {connstr!r}: expected "
         f"{expected_servicefile!r}, got {actual!r}"
@@ -172,30 +179,30 @@ def service_setup(pg, tmp_path):
         # PGSERVICEFILE is forced to a default (empty) location so the test
         # never looks at a home directory.
         "base_env": {"PGSYSCONFDIR": fwd(td), "PGSERVICEFILE": fwd(srvfile_empty)},
-        "libdir": pg.libdir,
+        "node": pg,
     }
 
 
 def test_service_with_pgservicefile(service_setup):
     """Combinations of service name and a valid service file via PGSERVICEFILE."""
     s = service_setup
-    libdir = s["libdir"]
+    node = s["node"]
     env = dict(s["base_env"], PGSERVICEFILE=s["valid"])
 
-    _connect_ok(libdir, _kw_user("service=my_srv"), "connect1_1", **env)
-    _connect_ok(libdir, _uri_user("postgres://?service=my_srv"), "connect1_2", **env)
+    _connect_ok(node, _kw_user("service=my_srv"), "connect1_1", **env)
+    _connect_ok(node, _uri_user("postgres://?service=my_srv"), "connect1_2", **env)
     _connect_fails(
-        libdir,
+        node,
         _kw_user("service=undefined-service"),
         r'definition of service "undefined-service" not found',
         **env,
     )
 
     _connect_ok(
-        libdir, _kw_user(""), "connect1_3", **dict(env, PGSERVICE="my_srv")
+        node, _kw_user(""), "connect1_3", **dict(env, PGSERVICE="my_srv")
     )
     _connect_fails(
-        libdir,
+        node,
         _kw_user(""),
         r'definition of service "undefined-service" not found',
         **dict(env, PGSERVICE="undefined-service"),
@@ -207,7 +214,7 @@ def test_service_with_incorrect_pgservicefile(service_setup):
     s = service_setup
     env = dict(s["base_env"], PGSERVICEFILE=s["missing"])
     _connect_fails(
-        s["libdir"],
+        s["node"],
         _kw_user("service=my_srv"),
         r'service file ".*pg_service_missing\.conf" not found',
         **env,
@@ -217,35 +224,35 @@ def test_service_with_incorrect_pgservicefile(service_setup):
 def test_service_with_default_pg_service_conf(service_setup):
     """Service file named "pg_service.conf" found in PGSYSCONFDIR."""
     s = service_setup
-    libdir = s["libdir"]
+    node = s["node"]
     # Create copy of the valid file at the default PGSYSCONFDIR location.
     shutil.copy(s["valid"], s["default"])
     try:
         env = dict(s["base_env"])  # PGSERVICEFILE stays at the empty default
-        _connect_ok(libdir, _kw_user("service=my_srv"), "connect2_1", **env)
+        _connect_ok(node, _kw_user("service=my_srv"), "connect2_1", **env)
         _connect_ok(
-            libdir, _uri_user("postgres://?service=my_srv"), "connect2_2", **env
+            node, _uri_user("postgres://?service=my_srv"), "connect2_2", **env
         )
         _connect_fails(
-            libdir,
+            node,
             _kw_user("service=undefined-service"),
             r'definition of service "undefined-service" not found',
             **env,
         )
         _connect_ok(
-            libdir, _kw_user(""), "connect2_3", **dict(env, PGSERVICE="my_srv")
+            node, _kw_user(""), "connect2_3", **dict(env, PGSERVICE="my_srv")
         )
         # The given servicefile (empty) does not define the service, so it is
         # found in the default pg_service.conf; libpq then reports the default
         # file as the resolved servicefile.
         _connect_servicefile_is(
-            libdir,
+            node,
             _kw_user(f"service=my_srv servicefile='{s['empty']}'"),
             s["default"],
             **env,
         )
         _connect_fails(
-            libdir,
+            node,
             _kw_user(""),
             r'definition of service "undefined-service" not found',
             **dict(env, PGSERVICE="undefined-service"),
@@ -257,16 +264,16 @@ def test_service_with_default_pg_service_conf(service_setup):
 def test_service_nested(service_setup):
     """Nested "service" / "servicefile" specifications are rejected."""
     s = service_setup
-    libdir = s["libdir"]
+    node = s["node"]
 
     _connect_fails(
-        libdir,
+        node,
         _kw_user("service=my_srv"),
         r'nested "service" specifications not supported in service file',
         **dict(s["base_env"], PGSERVICEFILE=s["nested"]),
     )
     _connect_fails(
-        libdir,
+        node,
         _kw_user("service=my_srv"),
         r'nested "servicefile" specifications not supported in service file',
         **dict(s["base_env"], PGSERVICEFILE=s["nested_2"]),
@@ -276,14 +283,14 @@ def test_service_nested(service_setup):
 def test_servicefile_option(service_setup):
     """The "servicefile" connection option works in keyword and URI forms."""
     s = service_setup
-    libdir = s["libdir"]
+    node = s["node"]
     env = dict(s["base_env"])  # PGSERVICEFILE stays at the empty default
 
     # No backslash escaping needed on non-Windows (paths use forward slashes).
     valid = s["valid"]
 
     _connect_ok(
-        libdir,
+        node,
         _kw_user(f"service=my_srv servicefile='{valid}'"),
         "connect3_1",
         **env,
@@ -293,20 +300,20 @@ def test_servicefile_option(service_setup):
     encoded = valid.replace("\\", "%5C").replace("/", "%2F").replace(":", "%3A")
 
     _connect_ok(
-        libdir,
+        node,
         _uri_user(f"postgresql:///?service=my_srv&servicefile={encoded}"),
         "connect3_2",
         **env,
     )
 
     _connect_ok(
-        libdir,
+        node,
         _kw_user(f"servicefile='{valid}'"),
         "connect3_3",
         **dict(env, PGSERVICE="my_srv"),
     )
     _connect_ok(
-        libdir,
+        node,
         _uri_user(f"postgresql://?servicefile={encoded}"),
         "connect3_4",
         **dict(env, PGSERVICE="my_srv"),
@@ -316,18 +323,18 @@ def test_servicefile_option(service_setup):
 def test_servicefile_option_priority(service_setup):
     """The "servicefile" option takes priority over PGSERVICEFILE."""
     s = service_setup
-    libdir = s["libdir"]
+    node = s["node"]
     valid = s["valid"]
     env = dict(s["base_env"], PGSERVICEFILE="non-existent-file.conf")
 
     _connect_fails(
-        libdir,
+        node,
         _kw_user("service=my_srv"),
         r'service file "non-existent-file\.conf" not found',
         **env,
     )
     _connect_ok(
-        libdir,
+        node,
         _kw_user(f"service=my_srv servicefile='{valid}'"),
         "connect4_1",
         **env,
