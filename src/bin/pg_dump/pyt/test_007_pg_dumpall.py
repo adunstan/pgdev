@@ -30,6 +30,14 @@ def _pgdumpall_runs(tempdir, tablespace1, tablespace2, tablespace2_orig):
     element is (sql, dbname)), a dump_cmd and restore_cmd (argv lists), and
     like and/or unlike compiled regexps matched against the restore output.
     """
+    # The dumped tablespace LOCATION may come back with either path separator
+    # (and a Windows string literal may double its backslashes), depending on
+    # how the server canonicalizes the path.  Match the path components with a
+    # separator class that accepts "/", "\" or "\\" so the expected pattern
+    # agrees with the dump on every platform.
+    ts2_loc = r"[\\/]+".join(
+        re.escape(part) for part in re.split(r"[\\/]", tablespace2_orig))
+
     return {
         "restore_roles": {
             "setup_sql": [
@@ -81,8 +89,9 @@ def _pgdumpall_runs(tempdir, tablespace1, tablespace2, tablespace2_orig):
             # on Windows.
             "like": re.compile(
                 r"^"
-                r"\n CREATE\ TABLESPACE\ tbl2\ OWNER\ tap\ LOCATION\ (?:E)?"
-                + re.escape(f"'{tablespace2_orig}';")
+                r"\n CREATE\ TABLESPACE\ tbl2\ OWNER\ tap\ LOCATION\ (?:E)?'"
+                + ts2_loc
+                + r"';"
                 + r"\n ALTER\ TABLESPACE\ tbl2\ SET\ \(seq_page_cost=1.0\);",
                 _XM,
             ),
