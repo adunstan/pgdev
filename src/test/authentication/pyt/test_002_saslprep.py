@@ -6,10 +6,9 @@ These tests can only run with Unix-domain sockets, so the module is skipped
 when the framework is running over TCP (Windows).
 
 The passwords below contain non-ASCII characters, taken from the example
-strings of RFC4013.txt, Section "3. Examples".  They are byte-exact strings,
-so PGPASSWORD is set through ``os.environb`` to avoid any re-encoding.  The
-cluster is initialised with ``--locale=C --encoding=UTF8`` (the framework
-default).
+strings of RFC4013.txt, Section "3. Examples".  They are byte-exact UTF-8
+strings.  The cluster is initialised with ``--locale=C --encoding=UTF8`` (the
+framework default).
 """
 
 import os
@@ -23,6 +22,22 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _write_pgpass(path, password):
+    """Write a password file (matching any connection) holding the exact
+    *password* bytes.
+
+    The password is delivered through a password file rather than PGPASSWORD
+    because libpq reads the file content verbatim, with no character-set
+    conversion, so the exact bytes reach the SCRAM exchange on every platform.
+    An environment variable would instead be re-encoded through the process
+    code page on Windows, corrupting non-ASCII bytes.
+    """
+    escaped = password.replace(b"\\", b"\\\\").replace(b":", b"\\:")
+    with open(path, "wb") as fh:
+        fh.write(b"*:*:*:*:" + escaped + b"\n")
+    os.chmod(path, 0o600)
+
+
 # Delete pg_hba.conf from the given node, add a new entry to it
 # and then execute a reload to refresh it.
 def reset_pg_hba(node, hba_method):
@@ -33,10 +48,9 @@ def reset_pg_hba(node, hba_method):
 
 # Test access for a single role, useful to wrap all tests into one.
 # (Named with a leading underscore so pytest does not collect it as a test.)
-# *password* is a bytes object; it is installed into the byte-level
-# environment so libpq sees the exact bytes.  *expected_res* is 0 for a
-# successful login, non-zero otherwise.
-def _test_login(node, role, password, expected_res):
+# *password* is a bytes object, written to *pgpass* so libpq sees the exact
+# bytes.  *expected_res* is 0 for a successful login, non-zero otherwise.
+def _test_login(node, pgpass, role, password, expected_res):
     status_string = "success" if expected_res == 0 else "failed"
 
     connstr = f"user={role}"
@@ -45,7 +59,7 @@ def _test_login(node, role, password, expected_res):
         f"with password {password!r}"
     )
 
-    os.environb[b"PGPASSWORD"] = password
+    _write_pgpass(pgpass, password)
     if expected_res == 0:
         node.connect_ok(connstr, testname)
     else:
@@ -53,24 +67,32 @@ def _test_login(node, role, password, expected_res):
         node.connect_fails(connstr, testname)
 
 
-def test_002_saslprep(create_pg):
+def test_002_saslprep(create_pg, tmp_path):
     # Initialize primary node.  Force UTF-8 encoding, so that we can use
     # non-ASCII characters in the passwords below (the framework's init
     # already uses --locale=C --encoding=UTF8).
     node = create_pg("primary")
 
-    # Snapshot/restore PGPASSWORD so the rest of the suite is unaffected.
-    saved = os.environb.get(b"PGPASSWORD")
+    pgpass = os.path.join(str(tmp_path), "saslprep_pgpass.conf")
+
+    # Point libpq at our password file and make sure no PGPASSWORD overrides
+    # it; restore both so the rest of the suite is unaffected.
+    saved_file = os.environ.get("PGPASSFILE")
+    saved_pw = os.environ.get("PGPASSWORD")
+    os.environ["PGPASSFILE"] = pgpass
+    os.environ.pop("PGPASSWORD", None)
     try:
-        _run_body(node)
+        _run_body(node, pgpass)
     finally:
-        if saved is None:
-            os.environb.pop(b"PGPASSWORD", None)
+        if saved_file is None:
+            os.environ.pop("PGPASSFILE", None)
         else:
-            os.environb[b"PGPASSWORD"] = saved
+            os.environ["PGPASSFILE"] = saved_file
+        if saved_pw is not None:
+            os.environ["PGPASSWORD"] = saved_pw
 
 
-def _run_body(node):
+def _run_body(node, pgpass):
     # These tests are based on the example strings from RFC4013.txt,
     # Section "3. Examples":
     #
@@ -99,23 +121,23 @@ def _run_body(node):
     reset_pg_hba(node, "scram-sha-256")
 
     # Check that #1 and #5 are treated the same as just 'IX'
-    _test_login(node, "saslpreptest1_role", b"I\xc2\xadX", 0)
-    _test_login(node, "saslpreptest1_role", b"\xe2\x85\xa8", 0)
+    _test_login(node, pgpass, "saslpreptest1_role", b"I\xc2\xadX", 0)
+    _test_login(node, pgpass, "saslpreptest1_role", b"\xe2\x85\xa8", 0)
 
     # but different from lower case 'ix'
-    _test_login(node, "saslpreptest1_role", b"ix", 2)
+    _test_login(node, pgpass, "saslpreptest1_role", b"ix", 2)
 
     # Check #4
-    _test_login(node, "saslpreptest4a_role", b"a", 0)
-    _test_login(node, "saslpreptest4a_role", b"\xc2\xaa", 0)
-    _test_login(node, "saslpreptest4b_role", b"a", 0)
-    _test_login(node, "saslpreptest4b_role", b"\xc2\xaa", 0)
+    _test_login(node, pgpass, "saslpreptest4a_role", b"a", 0)
+    _test_login(node, pgpass, "saslpreptest4a_role", b"\xc2\xaa", 0)
+    _test_login(node, pgpass, "saslpreptest4b_role", b"a", 0)
+    _test_login(node, pgpass, "saslpreptest4b_role", b"\xc2\xaa", 0)
 
     # Check #6 and #7 - In PostgreSQL, contrary to the spec, if the password
     # contains prohibited characters, we use it as is, without normalization.
-    _test_login(node, "saslpreptest6_role", b"foo\x07bar", 0)
-    _test_login(node, "saslpreptest6_role", b"foobar", 2)
+    _test_login(node, pgpass, "saslpreptest6_role", b"foo\x07bar", 0)
+    _test_login(node, pgpass, "saslpreptest6_role", b"foobar", 2)
 
-    _test_login(node, "saslpreptest7_role", b"foo\xd8\xa71bar", 0)
-    _test_login(node, "saslpreptest7_role", b"foo1\xd8\xa7bar", 2)
-    _test_login(node, "saslpreptest7_role", b"foobar", 2)
+    _test_login(node, pgpass, "saslpreptest7_role", b"foo\xd8\xa71bar", 0)
+    _test_login(node, pgpass, "saslpreptest7_role", b"foo1\xd8\xa7bar", 2)
+    _test_login(node, pgpass, "saslpreptest7_role", b"foobar", 2)

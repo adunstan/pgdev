@@ -910,12 +910,22 @@ class PostgresServer:
                 f"{test_name}: stderr matches {expected_stderr!r}, got {stderr!r}"
             )
         if log_like or log_unlike:
-            self.wait_for_log(
-                r"(?s)DEBUG:  (?:00000: )?forked new client backend, pid=(\d+) "
-                r"socket.*DEBUG:  (?:00000: )?client backend \(PID \1\) exited "
-                r"with exit code \d",
-                log_location,
-            )
+            # Wait for the failed backend's log records to be flushed before
+            # checking.  On most platforms the postmaster logs a per-backend
+            # "forked new client backend, pid=N socket=..." record that can be
+            # paired with the matching "client backend (PID N) exited" record;
+            # Windows does not log the fork record, so wait for the exit record
+            # alone (connect_fails issues one connection at a time, so the next
+            # backend exit after this point is the one we triggered).
+            if WINDOWS_OS:
+                fork_exit = r"client backend \(PID \d+\) exited with exit code \d"
+            else:
+                fork_exit = (
+                    r"(?s)DEBUG:  (?:00000: )?forked new client backend, "
+                    r"pid=(\d+) socket.*DEBUG:  (?:00000: )?client backend "
+                    r"\(PID \1\) exited with exit code \d"
+                )
+            self.wait_for_log(fork_exit, log_location)
             self.log_check(test_name, log_location, log_like=log_like, log_unlike=log_unlike)
 
     def sql(self, query, dbname="postgres"):

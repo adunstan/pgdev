@@ -13,6 +13,7 @@ import re
 
 import pytest
 
+from libpq.errors import ConnectionError as PqConnectionError
 from pypg.util import USE_UNIX_SOCKETS
 
 pytestmark = pytest.mark.skipif(
@@ -69,8 +70,13 @@ def test_003_peer(create_pg):
     # Check if peer authentication is supported on this platform.
     log_offset = node.log_position()
     # Attempt a connection (as the current OS user) to make the server emit
-    # the "not supported" message if peer auth is unavailable.
-    node.sql("SELECT 1")
+    # the "not supported" message if peer auth is unavailable.  Where peer auth
+    # is unsupported (e.g. Windows) the attempt itself fails, so tolerate the
+    # connection error and decide from the server log.
+    try:
+        node.sql("SELECT 1")
+    except PqConnectionError:
+        pass
     if node.log_contains(
         r"peer authentication is not supported on this platform", log_offset
     ):
