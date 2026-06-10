@@ -82,6 +82,19 @@ def dir_symlink(target, link):
         os.symlink(target, link)
 
 
+def remove_dir_symlink(link):
+    """Remove a link created by :func:`dir_symlink`.
+
+    On Windows the link is a directory junction, which must be removed with
+    os.rmdir -- os.remove/os.unlink fail on it with "Access is denied".
+    Elsewhere it is an ordinary symlink, removed with os.unlink.
+    """
+    if WINDOWS_OS:
+        os.rmdir(link)
+    else:
+        os.unlink(link)
+
+
 def short_tempdir(prefix="pgt"):
     """Create and return a uniquely-named directory under the system temp area.
 

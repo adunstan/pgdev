@@ -22,7 +22,7 @@ import os
 import re
 import shutil
 
-from pypg.util import dir_symlink
+from pypg.util import dir_symlink, remove_dir_symlink
 
 
 def _restore_node(node, backup_path, ts_oid, ts_dest):
@@ -47,7 +47,7 @@ def _restore_node(node, backup_path, ts_oid, ts_dest):
     link = os.path.join(data_path, "pg_tblspc", ts_oid)
     src = os.path.realpath(link)
     shutil.copytree(src, ts_dest, symlinks=True)
-    os.remove(link)
+    remove_dir_symlink(link)
     dir_symlink(ts_dest, link)
 
     node.append_conf(
