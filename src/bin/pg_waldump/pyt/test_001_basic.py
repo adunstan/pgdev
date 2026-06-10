@@ -389,7 +389,9 @@ $$;
     # overwriting its magic number with 0000.
     broken_wal_dir = os.path.join(node.basedir, "broken_wal")
     os.makedirs(broken_wal_dir, exist_ok=True)
-    broken_wal = os.path.join(broken_wal_dir, start_walfile)
+    # Forward slashes: pg_waldump locates a WAL file by splitting its path on
+    # "/", so a Windows backslash path would not be found.
+    broken_wal = broken_wal_dir.replace("\\", "/") + "/" + start_walfile
     shutil.copy(_wal_path(node, start_walfile), broken_wal)
 
     with open(broken_wal, "r+b") as fh:
