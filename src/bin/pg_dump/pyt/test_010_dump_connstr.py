@@ -25,6 +25,21 @@ import subprocess
 import pytest
 
 from libpq import Session
+from pypg.util import WINDOWS_OS
+
+# The database/role names contain high-bit byte sequences that are not valid
+# UTF-8, and the tools under test are run as subprocesses with those bytes in
+# argv.  The Perl test passes them via a narrow (ANSI) process spawn, so it runs
+# everywhere except MSYS2.  Python's subprocess always uses CreateProcessW
+# (wide): a bytes arg must be valid UTF-8 (fails here), and a str arg is encoded
+# to the child's argv through the active code page, which cannot represent the
+# 0x80-0x9F range at all.  There is no portable way to pass these bytes as a
+# child's arguments under Python on any Windows, so skip there.
+pytestmark = pytest.mark.skipif(
+    WINDOWS_OS,
+    reason="high-bit byte names cannot be passed as subprocess arguments on "
+    "Windows under Python (subprocess uses CreateProcessW)",
+)
 
 
 def _generate_ascii_string(from_char, to_char):
