@@ -102,6 +102,23 @@ package PGnotify {
 	);
 }
 package PostgreSQL::PqFFI;
+
+# FFI::Platypus::Record keeps the record's Record::Meta object alive in a
+# package-glob closure, so it is not destroyed until global destruction.
+# Record::Meta's DESTROY is an FFI-attached function taking a custom type
+# whose marshalling is a Perl closure; during global destruction that
+# closure may already have been freed, making DESTROY die with "Can't use
+# an undefined value as a subroutine reference" (seen with FFI::Platypus
+# 2.08).  The process is exiting anyway, so skip the destructor then and
+# let the OS reclaim the memory.
+{
+	my $orig_destroy = \&FFI::Platypus::Record::Meta::DESTROY;
+	no warnings 'redefine';
+	*FFI::Platypus::Record::Meta::DESTROY = sub {
+		return if ${^GLOBAL_PHASE} eq 'DESTRUCT';
+		goto &$orig_destroy;
+	};
+}
 use PostgreSQL::PqConstants;
 use PostgreSQL::PGTypes;
 
