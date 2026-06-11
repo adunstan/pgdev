@@ -134,7 +134,7 @@ my $bgsession = PostgreSQL::Test::Session->new(node=>$node);
 
 # Launch query and look at slot data, incrementing the refcount of the
 # stats entry.
-$bgsession->do_async(
+$bgsession->query_safe(
 	"SELECT pg_logical_slot_peek_binary_changes('$slot_name_restart', NULL, NULL)"
 );
 
@@ -151,8 +151,7 @@ $node->safe_psql('postgres',
 
 # Look again at the slot data.  The local stats reference should be refreshed
 # to the reinitialized entry.
-$bgsession->wait_for_completion;
-$bgsession->do_async(
+$bgsession->query_safe(
 	"SELECT pg_logical_slot_peek_binary_changes('$slot_name_restart', NULL, NULL)"
 );
 # Drop again the slot, the entry is not dropped yet as the previous session
@@ -178,7 +177,6 @@ command_like(
 my $stats_file = "$datadir/pg_stat/pgstat.stat";
 ok(-f "$stats_file", "stats file must exist after shutdown");
 
-$bgsession->wait_for_completion;
 $bgsession->close;
 
 done_testing();
