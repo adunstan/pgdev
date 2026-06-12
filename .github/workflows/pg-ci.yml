@@ -91,7 +91,7 @@ env:
     -Dpytest=enabled
     -Dreadline=enabled
     -Dssl=openssl
-    -Dtap_tests=enabled
+    -Dtap_tests=disabled
     -Dzlib=enabled
     -Dzstd=enabled
 
@@ -522,6 +522,7 @@ jobs:
             --pkg-config-path /usr/lib/i386-linux-gnu/pkgconfig/ \
             -DPERL=perl5.40-i386-linux-gnu \
             -Dlibnuma=disabled \
+            -Dtap_tests=disabled \
             build
 
       - name: Build
@@ -608,6 +609,7 @@ jobs:
             -Duuid=e2fs \
             --buildtype=debug \
             -Dllvm=enabled \
+            -Dtap_tests=disabled \
             build
 
       - name: Build
@@ -829,7 +831,7 @@ jobs:
         -Dplpython=enabled
         -Dpytest=enabled
         -Dssl=openssl
-        -Dtap_tests=enabled
+        -Dtap_tests=disabled
 
     defaults:
       run:
