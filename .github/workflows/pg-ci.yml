@@ -88,6 +88,7 @@ env:
     -Dplperl=enabled
     -Dplpython=enabled
     -Dpltcl=enabled
+    -Dpytest=enabled
     -Dreadline=enabled
     -Dssl=openssl
     -Dtap_tests=enabled
@@ -668,6 +669,15 @@ jobs:
 
       - name: Test world
         shell: *su_postgres_shell
+        # The pytest suite loads libpq in-process via ctypes.  Here libpq is
+        # AddressSanitizer-instrumented, and ASan must come first in the link
+        # order; dlopening it into an otherwise uninstrumented python aborts
+        # with "ASan runtime does not come first".  Preload the ASan runtime
+        # for the test run to satisfy that (a no-op for the already-instrumented
+        # server/client binaries).  Scoped to this step so the build is
+        # unaffected; detect_leaks is already disabled via ASAN_OPTIONS.
+        env:
+          ADDITIONAL_SETUP: export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
         run: *meson_test_world_cmd
 
       - *linux_collect_cores_step
@@ -710,6 +720,8 @@ jobs:
         openssl
         p5.34-io-tty
         p5.34-ipc-run
+        py312-pexpect
+        py312-pytest
         python312
         tcl
         zstd
@@ -869,6 +881,7 @@ jobs:
         -Dldap=enabled
         -Dplperl=enabled
         -Dplpython=enabled
+        -Dpytest=enabled
         -Dssl=openssl
         -Dtap_tests=enabled
 
@@ -956,9 +969,11 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: |
-          # meson is not preinstalled on windows-2022. Install via pip
+          # meson is not preinstalled on windows-2022. Install via pip.
+          # pytest enables the Python test suite (pexpect is omitted: it needs
+          # a pty, which Windows lacks, and the interactive tests importorskip).
           echo ::group::pip
-          python -m pip install --upgrade meson
+          python -m pip install --upgrade meson pytest
           if (!$?) { throw 'cmdfail' }
           echo ::endgroup::
 
@@ -1096,6 +1111,7 @@ jobs:
             ${MINGW_PACKAGE_PREFIX}-meson \
             ${MINGW_PACKAGE_PREFIX}-perl \
             ${MINGW_PACKAGE_PREFIX}-pkgconf \
+            ${MINGW_PACKAGE_PREFIX}-python-pytest \
             ${MINGW_PACKAGE_PREFIX}-readline \
             ${MINGW_PACKAGE_PREFIX}-zlib \
             ${MINGW_PACKAGE_PREFIX}-zstd
