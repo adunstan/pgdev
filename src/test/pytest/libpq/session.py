@@ -31,7 +31,7 @@ from .constants import (
     PQTRANS_INERROR,
 )
 from .errors import PqConnectionError
-from .errors import QueryError
+from .errors import QueryError, query_error_for
 from .pgnotify import read_notification
 from .result import extract_result_data
 
@@ -366,7 +366,10 @@ class Session:
         res = self.query(sql)
         if res.error_message is not None:
             short = re.sub(r"\s+", " ", sql[:100])
-            raise QueryError(f"query_safe failed on [{short}...]: {res.error_message}")
+            raise query_error_for(
+                f"query_safe failed on [{short}...]: {res.error_message}",
+                res.sqlstate,
+            )
         return res.psqlout
 
     def query_oneval(self, sql, missing_ok=False):
