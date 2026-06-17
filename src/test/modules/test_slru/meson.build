@@ -42,4 +42,13 @@ tests += {
       't/002_multixact_wraparound.pl'
     ],
   },
+  'pytest': {
+    'env': {
+       'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
+    },
+    'tests': [
+      'pyt/test_001_multixact.py',
+      'pyt/test_002_multixact_wraparound.py',
+    ],
+  },
 }

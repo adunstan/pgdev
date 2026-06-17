@@ -40,6 +40,21 @@ tests += {
       't/010_hardlink.pl',
       't/011_ib_truncation.pl',
     ],
+  },
+  'pytest': {
+    'tests': [
+      'pyt/test_001_basic.py',
+      'pyt/test_002_compare_backups.py',
+      'pyt/test_003_timeline.py',
+      'pyt/test_004_manifest.py',
+      'pyt/test_005_integrity.py',
+      'pyt/test_006_db_file_copy.py',
+      'pyt/test_007_wal_level_minimal.py',
+      'pyt/test_008_promote.py',
+      'pyt/test_009_no_full_file.py',
+      'pyt/test_010_hardlink.py',
+      'pyt/test_011_ib_truncation.py',
+    ],
   }
 }
 

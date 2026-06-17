@@ -1,0 +1,28 @@
+# Copyright (c) 2025-2026, PostgreSQL Global Development Group
+
+[project]
+name = "postgresql-pytest"
+version = "0.1.0"
+description = "Python (pytest) test infrastructure for PostgreSQL"
+requires-python = ">=3.8"
+# The only runtime dependency is pytest itself.  The libpq layer uses the
+# stdlib ctypes module, so no database driver (psycopg/asyncpg) is required.
+dependencies = [
+    "pytest >= 7.0",
+]
+
+# NOTE: the active pytest configuration ([tool.pytest.ini_options]) lives in
+# the repository-root pyproject.toml so it applies to test files throughout
+# the tree (src/bin/.../pyt, contrib/.../pyt, ...).  This file only records the
+# package metadata for the in-tree libpq/ and pypg/ packages.
+
+# Dev tooling for the code-quality gates configured in the repository-root
+# pyproject.toml.  Only needed to lint/format/type-check the suite, never to
+# run the tests.  Install with e.g.:  pip install --group dev  (pip >= 25.1)
+# or:  pip install 'black>=24,<26' 'mypy>=1.8,<2' 'pylint>=3,<4'
+[dependency-groups]
+dev = [
+    "black >= 24, < 26",
+    "mypy >= 1.8, < 2",
+    "pylint >= 3, < 4",
+]
