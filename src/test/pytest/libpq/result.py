@@ -12,6 +12,9 @@ from typing import List, Optional
 
 from .constants import ExecStatusType
 
+# PG_DIAG_SQLSTATE field id from postgres_ext.h, for PQresultErrorField().
+_PG_DIAG_SQLSTATE = ord("C")
+
 
 def _decode(raw):
     """Decode a libpq C string (bytes or None) to str/None."""
@@ -26,6 +29,7 @@ class ResultData:
 
     status: int
     error_message: Optional[str] = None
+    sqlstate: Optional[str] = None
     names: List[str] = field(default_factory=list)
     types: List[int] = field(default_factory=list)
     rows: List[List[Optional[str]]] = field(default_factory=list)
@@ -46,6 +50,7 @@ def extract_result_data(lib, result, conn):
         res.error_message = _decode(lib.PQresultErrorMessage(result)) or _decode(
             lib.PQerrorMessage(conn)
         )
+        res.sqlstate = _decode(lib.PQresultErrorField(result, _PG_DIAG_SQLSTATE))
         return res
     if status == ExecStatusType.PGRES_COMMAND_OK:
         return res
