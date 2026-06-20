@@ -168,10 +168,10 @@ test-build:
 check installcheck: export PATH := $(CURDIR)/test:$(PATH)
 
 check: test-build all
-	$(prove_check)
+	$(pytest_check)
 
 installcheck: test-build all
-	$(prove_installcheck)
+	$(pytest_installcheck)
 
 installdirs: installdirs-lib
 	$(MKDIR_P) '$(DESTDIR)$(includedir)' '$(DESTDIR)$(includedir_internal)' '$(DESTDIR)$(datadir)'

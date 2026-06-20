@@ -211,6 +211,7 @@ enable_dtrace	= @enable_dtrace@
 enable_coverage	= @enable_coverage@
 enable_injection_points = @enable_injection_points@
 enable_tap_tests	= @enable_tap_tests@
+enable_pytest	= @enable_pytest@
 
 python_includespec	= @python_includespec@
 python_libdir		= @python_libdir@
@@ -508,6 +509,66 @@ endef
 else
 prove_installcheck = @echo "TAP tests not enabled. Try configuring with --enable-tap-tests"
 prove_check = $(prove_installcheck)
+endif
+
+PYTEST = @PYTEST@
+# The active pytest configuration (plugins, import mode, and the pythonpath
+# that makes the in-tree libpq/ and pypg/ packages importable) lives in the
+# repository-root pyproject.toml; PYTHONPATH is also set below for robustness.
+# User-supplied pytest flags such as -v can be provided in PYTEST_FLAGS.
+PYTEST_FLAGS =
+
+ifeq ($(enable_pytest),yes)
+
+ifndef PGXS
+define pytest_installcheck
+echo "# +++ pytest install-check in $(subdir) +++" && \
+rm -rf '$(CURDIR)'/tmp_check && \
+$(MKDIR_P) '$(CURDIR)'/tmp_check && \
+cd $(srcdir) && \
+   TESTLOGDIR='$(CURDIR)/tmp_check/log' \
+   TESTDATADIR='$(CURDIR)/tmp_check' \
+   PATH="$(bindir):$(CURDIR):$$PATH" \
+   PYTHONPATH='$(abs_top_srcdir)/src/test/pytest$(if $(PYTHONPATH),:$(PYTHONPATH),)' \
+   PGPORT='6$(DEF_PGPORT)' top_builddir='$(CURDIR)/$(top_builddir)' \
+   PG_REGRESS='$(CURDIR)/$(top_builddir)/src/test/regress/pg_regress' \
+   share_contrib_dir='$(DESTDIR)$(datadir)/$(datamoduledir)' \
+   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/test_*.py)
+endef
+else # PGXS case
+define pytest_installcheck
+echo "# +++ pytest install-check in $(subdir) +++" && \
+rm -rf '$(CURDIR)'/tmp_check && \
+$(MKDIR_P) '$(CURDIR)'/tmp_check && \
+cd $(srcdir) && \
+   TESTLOGDIR='$(CURDIR)/tmp_check/log' \
+   TESTDATADIR='$(CURDIR)/tmp_check' \
+   PATH="$(bindir):$(CURDIR):$$PATH" \
+   PYTHONPATH='$(datadir)/pgxs/src/test/pytest$(if $(PYTHONPATH),:$(PYTHONPATH),)' \
+   PGPORT='6$(DEF_PGPORT)' \
+   PG_REGRESS='$(top_builddir)/src/test/regress/pg_regress' \
+   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/test_*.py)
+endef
+endif # PGXS
+
+define pytest_check
+echo "# +++ pytest check in $(subdir) +++" && \
+rm -rf '$(CURDIR)'/tmp_check && \
+$(MKDIR_P) '$(CURDIR)'/tmp_check && \
+cd $(srcdir) && \
+   TESTLOGDIR='$(CURDIR)/tmp_check/log' \
+   TESTDATADIR='$(CURDIR)/tmp_check' \
+   $(with_temp_install) \
+   PYTHONPATH='$(abs_top_srcdir)/src/test/pytest$(if $(PYTHONPATH),:$(PYTHONPATH),)' \
+   PGPORT='6$(DEF_PGPORT)' top_builddir='$(CURDIR)/$(top_builddir)' \
+   PG_REGRESS='$(CURDIR)/$(top_builddir)/src/test/regress/pg_regress' \
+   share_contrib_dir='$(abs_top_builddir)/tmp_install$(datadir)/$(datamoduledir)' \
+   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/test_*.py)
+endef
+
+else
+pytest_installcheck = @echo "pytest tests not enabled. Try configuring with --enable-pytest"
+pytest_check = $(pytest_installcheck)
 endif
 
 # Installation.

@@ -231,6 +231,12 @@ AC_SUBST(enable_dtrace)
 PGAC_ARG_BOOL(enable, tap-tests, no,
               [enable TAP tests (requires Perl and IPC::Run)])
 AC_SUBST(enable_tap_tests)
+
+# Python (pytest) tests
+#
+PGAC_ARG_BOOL(enable, pytest, no,
+              [enable Python (pytest) tests (requires pytest)])
+AC_SUBST(enable_pytest)
 AC_ARG_VAR(PG_TEST_EXTRA,
            [enable selected extra tests (overridden at runtime by PG_TEST_EXTRA environment variable)])
 
@@ -2499,6 +2505,24 @@ if test "$enable_tap_tests" = yes; then
     # on failure, though, show the results to the user
     AC_MSG_RESULT([$modulestderr])
     AC_MSG_ERROR([Additional Perl modules are required to run TAP tests])
+  fi
+fi
+
+if test "$enable_pytest" = yes; then
+  # Make sure we know how to run pytest.  Prefer a "pytest" program, but fall
+  # back to "python -m pytest" (as the Meson build does), since some
+  # installations provide only the module and not a wrapper script.
+  PGAC_PATH_PROGS(PYTEST, pytest)
+  if test -z "$PYTEST"; then
+    for pgac_python in python3 python; do
+      if "$pgac_python" -m pytest --version >/dev/null 2>&1; then
+        PYTEST="$pgac_python -m pytest"
+        break
+      fi
+    done
+  fi
+  if test -z "$PYTEST"; then
+    AC_MSG_ERROR([pytest not found])
   fi
 fi
 
