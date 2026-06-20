@@ -10,7 +10,6 @@ tests += {
        'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
     },
     'tests': [
-      't/001_stream_rep.pl',
       't/002_archiving.pl',
       't/003_recovery_targets.pl',
       't/004_timeline_switch.pl',
@@ -62,6 +61,15 @@ tests += {
       't/051_effective_wal_level.pl',
       't/052_checkpoint_segment_missing.pl',
       't/053_standby_login_event_trigger.pl',
+    ],
+  },
+  'pytest': {
+    'test_kwargs': {'priority': 40}, # recovery tests are slow, start early
+    'env': {
+       'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
+    },
+    'tests': [
+      'pyt/test_001_stream_rep.py',
     ],
   },
 }
