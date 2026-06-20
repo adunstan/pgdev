@@ -71,13 +71,16 @@ tests += {
   'name': 'psql',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tap': {
+  'pytest': {
     'env': {'with_readline': readline.found() ? 'yes' : 'no'},
+    # 010_tab_completion and 030_pager drive psql through an interactive pty;
+    # they use pexpect via the interactive_psql fixture in pyt/conftest.py and
+    # skip when pexpect (or readline / a working "wc -l") is unavailable.
     'tests': [
-      't/001_basic.pl',
-      't/010_tab_completion.pl',
-      't/020_cancel.pl',
-      't/030_pager.pl',
+      'pyt/001_basic.py',
+      'pyt/010_tab_completion.py',
+      'pyt/020_cancel.py',
+      'pyt/030_pager.py',
     ],
   },
 }

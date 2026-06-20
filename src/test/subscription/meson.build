@@ -10,7 +10,6 @@ tests += {
       'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
     },
     'tests': [
-      't/001_rep_changes.pl',
       't/002_types.pl',
       't/003_constraints.pl',
       't/004_sync.pl',
@@ -49,6 +48,15 @@ tests += {
       't/037_except.pl',
       't/038_walsnd_shutdown_timeout.pl',
       't/100_bugs.pl',
+    ],
+  },
+  'pytest': {
+    'env': {
+      'with_icu': icu.found() ? 'yes' : 'no',
+      'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
+    },
+    'tests': [
+      'pyt/001_rep_changes.py',
     ],
   },
 }

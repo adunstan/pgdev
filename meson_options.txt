@@ -43,6 +43,9 @@ option('cassert', type: 'boolean', value: false,
 option('tap_tests', type: 'feature', value: 'auto',
   description: 'Enable TAP tests')
 
+option('pytest', type: 'feature', value: 'auto',
+  description: 'Enable Python (pytest) test suites')
+
 option('injection_points', type: 'boolean', value: false,
   description: 'Enable injection points')
 
@@ -197,6 +200,9 @@ option('PROVE', type: 'string', value: 'prove',
 
 option('PYTHON', type: 'array', value: ['python3', 'python'],
   description: 'Path to python binary')
+
+option('PYTEST', type: 'array', value: ['pytest', 'py.test'],
+  description: 'Path to pytest binary')
 
 option('SED', type: 'string', value: 'gsed',
   description: 'Path to sed binary')

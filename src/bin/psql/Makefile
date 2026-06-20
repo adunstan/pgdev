@@ -80,7 +80,7 @@ clean distclean:
 	rm -f sql_help.h sql_help.c psqlscanslash.c tab-complete.c
 
 check:
-	$(prove_check)
+	$(pytest_check)
 
 installcheck:
-	$(prove_installcheck)
+	$(pytest_installcheck)

@@ -153,14 +153,14 @@ tests += {
   'name': 'libpq',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tap': {
+  'pytest': {
     'tests': [
-      't/001_uri.pl',
-      't/002_api.pl',
-      't/003_load_balance_host_list.pl',
-      't/004_load_balance_dns.pl',
-      't/005_negotiate_encryption.pl',
-      't/006_service.pl',
+      'pyt/001_uri.py',
+      'pyt/002_api.py',
+      'pyt/003_load_balance_host_list.py',
+      'pyt/004_load_balance_dns.py',
+      'pyt/005_negotiate_encryption.py',
+      'pyt/006_service.py',
     ],
     'env': {
       'with_ssl': ssl_library,
