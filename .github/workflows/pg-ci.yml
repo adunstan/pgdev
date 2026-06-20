@@ -348,6 +348,7 @@ jobs:
             --auto-features=disabled \
             -Ddefault_library=shared \
             -Dtap_tests=enabled \
+            -Dpytest=enabled \
             build
 
       - name: Build
@@ -383,7 +384,7 @@ jobs:
 
       # Run a minimal set of tests. The main regression tests take too long
       # for this purpose. For now this is a random quick pg_regress style
-      # test, and a tap test that exercises both a frontend binary and the
+      # test, and a pytest test that exercises both a frontend binary and the
       # backend.
       #
       # To allow the command below to be reused by later tasks, we allow
@@ -396,7 +397,7 @@ jobs:
       - name: Test
         shell: *su_postgres_shell
         env:
-          MTEST_TARGET: cube/regress pg_ctl/001_start_stop
+          MTEST_TARGET: cube/regress pg_ctl/test_001_start_stop
         run: &meson_test_world_cmd |
           ${{case(runner.os == 'Windows', '', 'ulimit -c unlimited')}}
 
