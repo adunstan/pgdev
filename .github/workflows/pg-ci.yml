@@ -397,7 +397,7 @@ jobs:
       - name: Test
         shell: *su_postgres_shell
         env:
-          MTEST_TARGET: cube/regress pg_ctl/test_001_start_stop
+          MTEST_TARGET: cube/regress pg_ctl/001_start_stop
         run: &meson_test_world_cmd |
           ${{case(runner.os == 'Windows', '', 'ulimit -c unlimited')}}
 

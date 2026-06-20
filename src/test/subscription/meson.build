@@ -56,7 +56,7 @@ tests += {
       'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
     },
     'tests': [
-      'pyt/test_001_rep_changes.py',
+      'pyt/001_rep_changes.py',
     ],
   },
 }

@@ -8,8 +8,8 @@ so a test can open many sessions, drive async and pipeline-mode traffic, and
 inspect results without subprocess overhead.
 
 The framework deliberately mirrors the concepts of `PostgreSQL::Test::Cluster`
-and `PostgreSQL::Test::Utils`, so a Perl `.pl` test maps fairly directly onto a
-Python `test_*.py`.
+and `PostgreSQL::Test::Utils`, so a Perl `t/NNN_name.pl` test maps fairly
+directly onto a Python `pyt/NNN_name.py`.
 
 ## Layout
 
@@ -39,20 +39,21 @@ The actual tests live in `pyt/` subdirectories next to the code they cover, the
 same way Perl TAP tests live in `t/`:
 
 ```
-src/bin/psql/pyt/test_001_basic.py
-src/bin/pg_rewind/pyt/test_001_basic.py
-src/test/authentication/pyt/test_001_password.py
+src/bin/psql/pyt/001_basic.py
+src/bin/pg_rewind/pyt/001_basic.py
+src/test/authentication/pyt/001_password.py
 contrib/<ext>/pyt/...
 ```
 
 ### Naming and discovery
 
-* Test files are `test_NNN_<description>.py` (`test_001_basic.py`), matching the
-  `NNN_name.pl` numbering of the Perl originals.
+* Converted test files are `NNN_<description>.py` (`001_basic.py`), matching the
+  `NNN_name.pl` naming of the Perl originals; the framework's own self-tests
+  under `src/test/pytest/pyt` use the pytest-default `test_*.py`.
 * Test functions are `test_<name>(...)`; pytest collects them automatically.
 * Helper functions are prefixed with `_` so pytest does not collect them.
 * `--import-mode=importlib` is set so that identically named files in different
-  directories (the many `test_001_basic.py`) do not collide.
+  directories (the many `001_basic.py`) do not collide.
 
 ## Running the tests
 
@@ -101,7 +102,7 @@ running from the repo root (or anywhere beneath it) picks up the right config:
 [tool.pytest.ini_options]
 pythonpath   = ["src/test/pytest"]              # make libpq/ and pypg/ importable
 addopts      = ["-p", "pgtap", "-p", "pypg.fixtures", "--import-mode=importlib"]
-python_files = ["test_*.py"]
+python_files = ["[0-9]*.py", "test_*.py"]       # NNN_name.py suites + test_*.py self-tests
 ```
 
 ### Requirements
@@ -262,7 +263,7 @@ that suite's `conftest.py`.
 
 ## Writing a new test
 
-1. Create `…/pyt/test_NNN_<name>.py` (and a `pyt/meson.build` adding the suite
+1. Create `…/pyt/NNN_<name>.py` (and a `pyt/meson.build` adding the suite
    to `tests` if the directory is new).
 2. Start from the `pg` / `conn` / `create_pg` fixtures; reach for `pg_bin` to run
    client programs.
@@ -270,5 +271,5 @@ that suite's `conftest.py`.
 4. Use `wait_for_*` / `poll_query_until` / `poll_until` instead of fixed sleeps.
 5. Gate anything expensive or unsafe behind `PG_TEST_EXTRA`, and
    `importorskip` / skip cleanly when an optional dependency is missing.
-6. Run it directly with `pytest …/pyt/test_NNN_<name>.py -v`, then confirm it
+6. Run it directly with `pytest …/pyt/NNN_<name>.py -v`, then confirm it
    passes under `meson test`.

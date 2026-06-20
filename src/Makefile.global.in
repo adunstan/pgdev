@@ -533,7 +533,7 @@ cd $(srcdir) && \
    PGPORT='6$(DEF_PGPORT)' top_builddir='$(CURDIR)/$(top_builddir)' \
    PG_REGRESS='$(CURDIR)/$(top_builddir)/src/test/regress/pg_regress' \
    share_contrib_dir='$(DESTDIR)$(datadir)/$(datamoduledir)' \
-   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/test_*.py)
+   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/[0-9]*.py)
 endef
 else # PGXS case
 define pytest_installcheck
@@ -547,7 +547,7 @@ cd $(srcdir) && \
    PYTHONPATH='$(datadir)/pgxs/src/test/pytest$(if $(PYTHONPATH),:$(PYTHONPATH),)' \
    PGPORT='6$(DEF_PGPORT)' \
    PG_REGRESS='$(top_builddir)/src/test/regress/pg_regress' \
-   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/test_*.py)
+   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/[0-9]*.py)
 endef
 endif # PGXS
 
@@ -563,7 +563,7 @@ cd $(srcdir) && \
    PGPORT='6$(DEF_PGPORT)' top_builddir='$(CURDIR)/$(top_builddir)' \
    PG_REGRESS='$(CURDIR)/$(top_builddir)/src/test/regress/pg_regress' \
    share_contrib_dir='$(abs_top_builddir)/tmp_install$(datadir)/$(datamoduledir)' \
-   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/test_*.py)
+   $(PYTEST) $(PYTEST_FLAGS) $(if $(PYTEST_TESTS),$(PYTEST_TESTS),pyt/[0-9]*.py)
 endef
 
 else

@@ -17,8 +17,10 @@ pythonpath = ["src/test/pytest"]
 # directories (e.g. many t/001_basic) do not collide.
 addopts = ["-p", "pgtap", "-p", "pypg.fixtures", "--import-mode=importlib"]
 
-# Tests live in pyt/ subdirectories using the test_*.py convention.
-python_files = ["test_*.py"]
+# Tests live in pyt/ subdirectories.  Converted suites follow the PostgreSQL
+# TAP naming convention (NNN_name.py, mirroring t/NNN_name.pl); the framework's
+# own self-tests under src/test/pytest/pyt use the pytest-default test_*.py.
+python_files = ["[0-9]*.py", "test_*.py"]
 
 # ---------------------------------------------------------------------------
 # Code quality gates for the Python test suite (src/test/pytest and the pyt/

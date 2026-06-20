@@ -155,12 +155,12 @@ tests += {
   'bd': meson.current_build_dir(),
   'pytest': {
     'tests': [
-      'pyt/test_001_uri.py',
-      'pyt/test_002_api.py',
-      'pyt/test_003_load_balance_host_list.py',
-      'pyt/test_004_load_balance_dns.py',
-      'pyt/test_005_negotiate_encryption.py',
-      'pyt/test_006_service.py',
+      'pyt/001_uri.py',
+      'pyt/002_api.py',
+      'pyt/003_load_balance_host_list.py',
+      'pyt/004_load_balance_dns.py',
+      'pyt/005_negotiate_encryption.py',
+      'pyt/006_service.py',
     ],
     'env': {
       'with_ssl': ssl_library,

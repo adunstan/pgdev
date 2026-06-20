@@ -77,10 +77,10 @@ tests += {
     # they use pexpect via the interactive_psql fixture in pyt/conftest.py and
     # skip when pexpect (or readline / a working "wc -l") is unavailable.
     'tests': [
-      'pyt/test_001_basic.py',
-      'pyt/test_010_tab_completion.py',
-      'pyt/test_020_cancel.py',
-      'pyt/test_030_pager.py',
+      'pyt/001_basic.py',
+      'pyt/010_tab_completion.py',
+      'pyt/020_cancel.py',
+      'pyt/030_pager.py',
     ],
   },
 }

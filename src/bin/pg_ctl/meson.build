@@ -23,10 +23,10 @@ tests += {
   'bd': meson.current_build_dir(),
   'pytest': {
     'tests': [
-      'pyt/test_001_start_stop.py',
-      'pyt/test_002_status.py',
-      'pyt/test_003_promote.py',
-      'pyt/test_004_logrotate.py',
+      'pyt/001_start_stop.py',
+      'pyt/002_status.py',
+      'pyt/003_promote.py',
+      'pyt/004_logrotate.py',
     ],
   },
 }

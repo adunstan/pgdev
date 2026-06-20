@@ -69,7 +69,7 @@ tests += {
        'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
     },
     'tests': [
-      'pyt/test_001_stream_rep.py',
+      'pyt/001_stream_rep.py',
     ],
   },
 }
