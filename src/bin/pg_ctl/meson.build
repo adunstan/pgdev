@@ -21,12 +21,12 @@ tests += {
   'name': 'pg_ctl',
   'sd': meson.current_source_dir(),
   'bd': meson.current_build_dir(),
-  'tap': {
+  'pytest': {
     'tests': [
-      't/001_start_stop.pl',
-      't/002_status.pl',
-      't/003_promote.pl',
-      't/004_logrotate.pl',
+      'pyt/test_001_start_stop.py',
+      'pyt/test_002_status.py',
+      'pyt/test_003_promote.py',
+      'pyt/test_004_logrotate.py',
     ],
   },
 }
