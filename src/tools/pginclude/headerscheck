@@ -49,6 +49,7 @@ CXX=`sed -n 's/^CXX[ 	]*=[ 	]*//p' "$MGLOB"`
 PG_SYSROOT=`sed -n 's/^PG_SYSROOT[ 	]*=[ 	]*//p' "$MGLOB"`
 perl_includespec=`sed -n 's/^perl_includespec[ 	]*=[ 	]*//p' "$MGLOB"`
 python_includespec=`sed -n 's/^python_includespec[ 	]*=[ 	]*//p' "$MGLOB"`
+LUA_CFLAGS=`sed -n 's/^LUA_CFLAGS[ 	]*=[ 	]*//p' "$MGLOB"`
 
 # needed on Darwin
 CPPFLAGS=`echo "$CPPFLAGS" | sed "s|\\\$(PG_SYSROOT)|$PG_SYSROOT|g"`
@@ -140,6 +141,7 @@ do
 	test "$f" = src/pl/plpgsql/src/pl_reserved_kwlist.h && continue
 	test "$f" = src/pl/plpgsql/src/pl_unreserved_kwlist.h && continue
 	test "$f" = src/pl/plpgsql/src/plerrcodes.h && continue
+	test "$f" = src/pl/pl_lua/plerrcodes.h && continue
 	test "$f" = src/pl/plpython/spiexceptions.h && continue
 	test "$f" = src/pl/tcl/pltclerrcodes.h && continue
 
@@ -253,6 +255,8 @@ do
 	case "$f" in
 	    src/pl/plperl/*)
 		EXTRAINCLUDES="$perl_includespec" ;;
+	    src/pl/pl_lua/*)
+		EXTRAINCLUDES="$LUA_CFLAGS" ;;
 	    src/pl/plpython/*)
 		EXTRAINCLUDES="$python_includespec" ;;
 	    src/interfaces/ecpg/*)

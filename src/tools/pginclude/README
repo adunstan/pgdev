@@ -57,7 +57,7 @@ The easy way to run the script is to say "make -s headerscheck" in
 the top-level build directory after completing a build.  You should
 have included at least
 
-    --with-llvm --with-perl --with-python
+    --with-llvm --with-lua --with-perl --with-python
 
 in your configure options, else you're likely to get errors about
 related headers not being found.
@@ -87,7 +87,7 @@ The easy way to run the script is to say "make -s cpluspluscheck" in
 the top-level build directory after completing a build.  You should
 have included at least
 
-    --with-llvm --with-perl --with-python
+    --with-llvm --with-lua --with-perl --with-python
 
 in your configure options, else you're likely to get errors about
 related headers not being found.

@@ -1,0 +1,235 @@
+--
+-- Everything that can be reached from the global environment of the
+-- trusted language, checked against a list of what is meant to be there.
+-- A name that is not on the list is reported, so a new function or table
+-- has to be considered before it can appear in the sandbox.  Names that are
+-- on the list but missing are not reported: the standard library differs a
+-- little between Lua versions.
+--
+\set VERBOSITY terse
+SET client_min_messages = warning;
+CREATE EXTENSION IF NOT EXISTS pl_lua;
+RESET client_min_messages;
+
+CREATE FUNCTION pll_inventory() RETURNS SETOF text LANGUAGE pl_lua AS $$
+  local expected = {
+    ['_G table'] = true,
+    ['_G._G -> _G'] = true,
+    ['_G._PG_VERSION string'] = true,
+    ['_G._PG_VERSION_NUM number'] = true,
+    ['_G._PLREVISION string'] = true,
+    ['_G._PLVERSION string'] = true,
+    ['_G._PL_IDENT string'] = true,
+    ['_G._PL_LOAD_TIME number'] = true,
+    ['_G._VERSION string'] = true,
+    ['_G.assert function'] = true,
+    ['_G.collectgarbage function'] = true,
+    ['_G.coroutine table'] = true,
+    ['_G.coroutine.close function'] = true,
+    ['_G.coroutine.create function'] = true,
+    ['_G.coroutine.isyieldable function'] = true,
+    ['_G.coroutine.resume function'] = true,
+    ['_G.coroutine.running function'] = true,
+    ['_G.coroutine.status function'] = true,
+    ['_G.coroutine.wrap function'] = true,
+    ['_G.coroutine.yield function'] = true,
+    ['_G.error function'] = true,
+    ['_G.getmetatable function'] = true,
+    ['_G.ipairs function'] = true,
+    ['_G.load function'] = true,
+    ['_G.lpcall function'] = true,
+    ['_G.math table'] = true,
+    ['_G.math.abs function'] = true,
+    ['_G.math.acos function'] = true,
+    ['_G.math.asin function'] = true,
+    ['_G.math.atan function'] = true,
+    ['_G.math.atan2 function'] = true,
+    ['_G.math.ceil function'] = true,
+    ['_G.math.cos function'] = true,
+    ['_G.math.cosh function'] = true,
+    ['_G.math.deg function'] = true,
+    ['_G.math.exp function'] = true,
+    ['_G.math.floor function'] = true,
+    ['_G.math.fmod function'] = true,
+    ['_G.math.frexp function'] = true,
+    ['_G.math.huge number'] = true,
+    ['_G.math.ldexp function'] = true,
+    ['_G.math.log function'] = true,
+    ['_G.math.log10 function'] = true,
+    ['_G.math.max function'] = true,
+    ['_G.math.maxinteger number'] = true,
+    ['_G.math.min function'] = true,
+    ['_G.math.mininteger number'] = true,
+    ['_G.math.modf function'] = true,
+    ['_G.math.pi number'] = true,
+    ['_G.math.pow function'] = true,
+    ['_G.math.rad function'] = true,
+    ['_G.math.random function'] = true,
+    ['_G.math.randomseed function'] = true,
+    ['_G.math.sin function'] = true,
+    ['_G.math.sinh function'] = true,
+    ['_G.math.sqrt function'] = true,
+    ['_G.math.tan function'] = true,
+    ['_G.math.tanh function'] = true,
+    ['_G.math.tointeger function'] = true,
+    ['_G.math.type function'] = true,
+    ['_G.math.ult function'] = true,
+    ['_G.next function'] = true,
+    ['_G.os table'] = true,
+    ['_G.os.clock function'] = true,
+    ['_G.os.date function'] = true,
+    ['_G.os.difftime function'] = true,
+    ['_G.os.time function'] = true,
+    ['_G.package table'] = true,
+    ['_G.package.loaded table'] = true,
+    ['_G.package.loaded._G -> _G'] = true,
+    ['_G.package.loaded.coroutine -> _G.coroutine'] = true,
+    ['_G.package.loaded.math -> _G.math'] = true,
+    ['_G.package.loaded.os -> _G.os'] = true,
+    ['_G.package.loaded.package -> _G.package'] = true,
+    ['_G.package.loaded.string table'] = true,
+    ['_G.package.loaded.string.byte function'] = true,
+    ['_G.package.loaded.string.char function'] = true,
+    ['_G.package.loaded.string.find function'] = true,
+    ['_G.package.loaded.string.format function'] = true,
+    ['_G.package.loaded.string.gmatch function'] = true,
+    ['_G.package.loaded.string.gsub function'] = true,
+    ['_G.package.loaded.string.len function'] = true,
+    ['_G.package.loaded.string.lower function'] = true,
+    ['_G.package.loaded.string.match function'] = true,
+    ['_G.package.loaded.string.pack function'] = true,
+    ['_G.package.loaded.string.packsize function'] = true,
+    ['_G.package.loaded.string.rep function'] = true,
+    ['_G.package.loaded.string.reverse function'] = true,
+    ['_G.package.loaded.string.sub function'] = true,
+    ['_G.package.loaded.string.unpack function'] = true,
+    ['_G.package.loaded.string.upper function'] = true,
+    ['_G.package.loaded.table table'] = true,
+    ['_G.package.loaded.table.concat function'] = true,
+    ['_G.package.loaded.table.create function'] = true,
+    ['_G.package.loaded.table.insert function'] = true,
+    ['_G.package.loaded.table.move function'] = true,
+    ['_G.package.loaded.table.pack function'] = true,
+    ['_G.package.loaded.table.remove function'] = true,
+    ['_G.package.loaded.table.sort function'] = true,
+    ['_G.package.loaded.table.unpack function'] = true,
+    ['_G.package.loaded.utf8 table'] = true,
+    ['_G.package.loaded.utf8.char function'] = true,
+    ['_G.package.loaded.utf8.charpattern string'] = true,
+    ['_G.package.loaded.utf8.codepoint function'] = true,
+    ['_G.package.loaded.utf8.codes function'] = true,
+    ['_G.package.loaded.utf8.len function'] = true,
+    ['_G.package.loaded.utf8.offset function'] = true,
+    ['_G.package.preload table'] = true,
+    ['_G.package.searchers table'] = true,
+    ['_G.package.searchers.1 function'] = true,
+    ['_G.package.searchers.2 function'] = true,
+    ['_G.pairs function'] = true,
+    ['_G.pcall function'] = true,
+    ['_G.pgtype table'] = true,
+    ['_G.pgtype.array table'] = true,
+    ['_G.print function'] = true,
+    ['_G.rawequal function'] = true,
+    ['_G.rawget function'] = true,
+    ['_G.rawlen function'] = true,
+    ['_G.rawset function'] = true,
+    ['_G.require function'] = true,
+    ['_G.select function'] = true,
+    ['_G.setmetatable function'] = true,
+    ['_G.spi table'] = true,
+    ['_G.spi.commit function'] = true,
+    ['_G.spi.debug function'] = true,
+    ['_G.spi.elog function'] = true,
+    ['_G.spi.encode_array_constructor function'] = true,
+    ['_G.spi.encode_array_literal function'] = true,
+    ['_G.spi.encode_typed_literal function'] = true,
+    ['_G.spi.error function'] = true,
+    ['_G.spi.execute function'] = true,
+    ['_G.spi.execute_count function'] = true,
+    ['_G.spi.findcursor function'] = true,
+    ['_G.spi.info function'] = true,
+    ['_G.spi.is_atomic function'] = true,
+    ['_G.spi.log function'] = true,
+    ['_G.spi.looks_like_number function'] = true,
+    ['_G.spi.newcursor function'] = true,
+    ['_G.spi.notice function'] = true,
+    ['_G.spi.prepare function'] = true,
+    ['_G.spi.quote_ident function'] = true,
+    ['_G.spi.quote_literal function'] = true,
+    ['_G.spi.quote_nullable function'] = true,
+    ['_G.spi.readonly function'] = true,
+    ['_G.spi.return_query function'] = true,
+    ['_G.spi.rollback function'] = true,
+    ['_G.spi.rows function'] = true,
+    ['_G.spi.warning function'] = true,
+    ['_G.string -> _G.package.loaded.string'] = true,
+    ['_G.table -> _G.package.loaded.table'] = true,
+    ['_G.tonumber function'] = true,
+    ['_G.tostring function'] = true,
+    ['_G.type function'] = true,
+    ['_G.utf8 -> _G.package.loaded.utf8'] = true,
+    ['_G.warn function'] = true,
+    ['_G.xpcall function'] = true,
+    ['main-thread thread'] = true,
+    ['string-metatable table'] = true,
+    ['strmt table'] = true,
+    ['strmt.__index -> _G.package.loaded.string'] = true
+  }
+  -- the values of these differ from build to build and session to session
+  local volatile = {
+    ['_G._PL_LOAD_TIME'] = 'number', ['_G._PG_VERSION'] = 'string',
+    ['_G._PG_VERSION_NUM'] = 'number', ['_G._PLREVISION'] = 'string',
+    ['_G._PLVERSION'] = 'string', ['_G._PL_IDENT'] = 'string',
+    ['_G._VERSION'] = 'string',
+  }
+  local seen, out = {}, {}
+  local function note(path, what)
+    local line = path .. ' ' .. what
+    if not expected[line] then out[#out + 1] = 'unexpected: ' .. line end
+  end
+  local function walk(v, path, depth)
+    local t = type(v)
+    if t ~= 'table' then
+      if volatile[path] == t then return end
+      note(path, t)
+      return
+    end
+    if seen[v] then note(path, '-> ' .. seen[v]) return end
+    seen[v] = path
+    note(path, 'table')
+    if depth > 6 then out[#out + 1] = 'unexpected: too deep ' .. path return end
+    -- in a fixed order, so that a table reachable in two ways always gets
+    -- the same name
+    local keys = {}
+    for k in next, v do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+    for _, k in ipairs(keys) do
+      walk(rawget(v, k), path .. '.' .. tostring(k), depth + 1)
+    end
+  end
+  walk(_G, '_G', 0)
+  local smt = getmetatable('')
+  note('string-metatable', type(smt))
+  if type(smt) == 'table' then walk(smt, 'strmt', 1) end
+  note('main-thread', type(coroutine.running()))
+  table.sort(out)
+  for _, l in ipairs(out) do coroutine.yield(l) end
+$$;
+SELECT * FROM pll_inventory();
+
+-- and it does notice a new name
+CREATE FUNCTION pll_inventory_add() RETURNS void LANGUAGE pl_lua AS $$
+  _G.pll_extra = print
+  string.pll_extra = 1
+$$;
+SELECT pll_inventory_add();
+SELECT * FROM pll_inventory();
+CREATE FUNCTION pll_inventory_remove() RETURNS void LANGUAGE pl_lua AS $$
+  _G.pll_extra = nil
+  string.pll_extra = nil
+$$;
+SELECT pll_inventory_remove();
+SELECT count(*) FROM pll_inventory();
+DROP FUNCTION pll_inventory_add();
+DROP FUNCTION pll_inventory_remove();
+DROP FUNCTION pll_inventory();

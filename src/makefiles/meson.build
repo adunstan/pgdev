@@ -32,6 +32,12 @@ if not working_strip
 endif
 
 
+# lua_cflags_str is computed in the top-level meson.build, next to the Lua
+# dependency detection.  LUA_LIBS is empty on purpose: transform modules get
+# the Lua symbols from pl_lua.
+lua_cflags = lua_cflags_str
+
+
 pgxs_kv = {
   'PACKAGE_URL': pg_url,
   'PACKAGE_VERSION': pg_version,
@@ -79,6 +85,8 @@ pgxs_kv = {
 
   'perl_includespec': perl_includespec,
   'python_includespec': python_includespec,
+  'LUA_CFLAGS': lua_cflags,
+  'LUA_LIBS': '',
 
   # these seem to be standard these days
   'MKDIR_P': 'mkdir -p',
@@ -246,6 +254,7 @@ pgxs_deps = {
   'libxml': libxml,
   'libxslt': libxslt,
   'llvm': llvm,
+  'lua': lua_dep,
   'lz4': lz4,
   'nls': libintl,
   'pam': pam,

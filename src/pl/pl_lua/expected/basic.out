@@ -1,0 +1,412 @@
+--
+-- Basic function, procedure and DO block behavior
+--
+SET client_min_messages = warning;
+CREATE EXTENSION IF NOT EXISTS pl_lua;
+CREATE EXTENSION IF NOT EXISTS pl_luau;
+RESET client_min_messages;
+\set VERBOSITY terse
+DO LANGUAGE pl_lua $$ print("hello from the trusted language") $$;
+INFO:  hello from the trusted language
+DO LANGUAGE pl_luau $$ print("hello from the untrusted language") $$;
+INFO:  hello from the untrusted language
+-- named arguments, unnamed arguments, and mixtures
+CREATE FUNCTION add2(a integer, b integer) RETURNS integer
+LANGUAGE pl_lua AS $$ return a + b $$;
+CREATE FUNCTION mul2(integer, integer) RETURNS integer
+LANGUAGE pl_lua AS $$
+  local a, b = ...
+  return a * b
+$$;
+CREATE FUNCTION named_then_unnamed(x integer, integer, integer) RETURNS text
+LANGUAGE pl_lua AS $$
+  local y, z = ...
+  return x .. "," .. y .. "," .. z
+$$;
+SELECT add2(1, 2), mul2(6, 7), named_then_unnamed(1, 2, 3);
+ add2 | mul2 | named_then_unnamed 
+------+------+--------------------
+    3 |   42 | 1,2,3
+(1 row)
+
+-- a named argument may not follow an unnamed one
+CREATE FUNCTION bad_args(integer, b integer) RETURNS integer
+LANGUAGE pl_lua AS $$ return b $$;
+ERROR:  named argument "b" follows an unnamed argument
+-- argument names must be usable as Lua names
+CREATE FUNCTION bad_name("end" integer) RETURNS integer
+LANGUAGE pl_lua AS $$ return 1 $$;
+ERROR:  argument name "end" is not a valid Lua identifier
+CREATE FUNCTION bad_name2("a b" integer) RETURNS integer
+LANGUAGE pl_lua AS $$ return 1 $$;
+ERROR:  argument name "a b" is not a valid Lua identifier
+-- nulls
+CREATE FUNCTION null_in_out(a integer) RETURNS integer
+LANGUAGE pl_lua AS $$
+  if a == nil then return -1 end
+  return nil
+$$;
+SELECT null_in_out(NULL), null_in_out(1);
+ null_in_out | null_in_out 
+-------------+-------------
+          -1 |            
+(1 row)
+
+CREATE FUNCTION no_result() RETURNS integer
+LANGUAGE pl_lua AS $$ local x = 1 $$;
+SELECT no_result() IS NULL;
+ ?column? 
+----------
+ t
+(1 row)
+
+-- STRICT functions are not called for null input
+CREATE FUNCTION strict_fn(a integer) RETURNS text STRICT
+LANGUAGE pl_lua AS $$ return "called with " .. a $$;
+SELECT strict_fn(NULL), strict_fn(5);
+ strict_fn |   strict_fn   
+-----------+---------------
+           | called with 5
+(1 row)
+
+-- void functions
+CREATE FUNCTION void_fn() RETURNS void
+LANGUAGE pl_lua AS $$ return 42 $$;
+SELECT void_fn();
+ void_fn 
+---------
+ 
+(1 row)
+
+-- composite results: by name, by value, and by output parameters
+CREATE TYPE basic_pair AS (a integer, b text);
+CREATE FUNCTION pair_by_name() RETURNS basic_pair
+LANGUAGE pl_lua AS $$ return { a = 1, b = "one" } $$;
+CREATE FUNCTION pair_by_value() RETURNS basic_pair
+LANGUAGE pl_lua AS $$ return 2, "two" $$;
+CREATE FUNCTION pair_short() RETURNS basic_pair
+LANGUAGE pl_lua AS $$ return 3 $$;
+CREATE FUNCTION pair_long() RETURNS basic_pair
+LANGUAGE pl_lua AS $$ return 3, "three", "extra" $$;
+CREATE FUNCTION pair_null() RETURNS basic_pair
+LANGUAGE pl_lua AS $$ return nil $$;
+CREATE FUNCTION out_params(OUT n integer, OUT s text)
+LANGUAGE pl_lua AS $$ return 10, "ten" $$;
+SELECT * FROM pair_by_name();
+ a |  b  
+---+-----
+ 1 | one
+(1 row)
+
+SELECT * FROM pair_by_value();
+ a |  b  
+---+-----
+ 2 | two
+(1 row)
+
+SELECT * FROM pair_short();
+ a | b 
+---+---
+ 3 | 
+(1 row)
+
+SELECT * FROM pair_long();
+ERROR:  too many values returned: the result type has 2 columns, but 3 values were returned
+SELECT pair_null() IS NULL;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT * FROM out_params();
+ n  |  s  
+----+-----
+ 10 | ten
+(1 row)
+
+-- records
+CREATE FUNCTION rec_fn() RETURNS record
+LANGUAGE pl_lua AS $$ return 1, "x" $$;
+SELECT * FROM rec_fn() AS t(a integer, b text);
+ a | b 
+---+---
+ 1 | x
+(1 row)
+
+-- polymorphic functions
+CREATE FUNCTION poly_type(anyelement) RETURNS text
+LANGUAGE pl_lua AS $$ return pgtype(..., 1):name() $$;
+SELECT poly_type(1), poly_type('x'::text), poly_type(1.5::numeric);
+ poly_type | poly_type | poly_type 
+-----------+-----------+-----------
+ integer   | text      | numeric
+(1 row)
+
+CREATE FUNCTION poly_ret(a anyelement) RETURNS anyelement
+LANGUAGE pl_lua AS $$ return a $$;
+SELECT poly_ret(42), poly_ret('abc'::text);
+ poly_ret | poly_ret 
+----------+----------
+       42 | abc
+(1 row)
+
+-- variadic functions
+CREATE FUNCTION variadic_sum(VARIADIC nums integer[]) RETURNS integer
+LANGUAGE pl_lua AS $$
+  local t = 0
+  for i, v in ipairs(nums) do t = t + v end
+  return t
+$$;
+SELECT variadic_sum(1, 2, 3), variadic_sum(VARIADIC ARRAY[]::integer[]);
+ variadic_sum | variadic_sum 
+--------------+--------------
+            6 |            0
+(1 row)
+
+CREATE FUNCTION variadic_any(VARIADIC "any") RETURNS text
+LANGUAGE pl_lua AS $$
+  return select('#', ...) .. " args"
+$$;
+SELECT variadic_any(1, 'a', true);
+ variadic_any 
+--------------
+ 3 args
+(1 row)
+
+-- each function has its own environment for undeclared variables
+CREATE FUNCTION counter1() RETURNS integer
+LANGUAGE pl_lua AS $$
+  n = (n or 0) + 1
+  return n
+$$;
+CREATE FUNCTION counter2() RETURNS integer
+LANGUAGE pl_lua AS $$
+  n = (n or 100) + 1
+  return n
+$$;
+SELECT counter1(), counter1(), counter2(), counter1(), counter2();
+ counter1 | counter1 | counter2 | counter1 | counter2 
+----------+----------+----------+----------+----------
+        1 |        2 |      101 |        3 |      102
+(1 row)
+
+-- sharing data through _G
+CREATE FUNCTION set_shared(v text) RETURNS void
+LANGUAGE pl_lua AS $$ _G.shared_value = v $$;
+CREATE FUNCTION get_shared() RETURNS text
+LANGUAGE pl_lua AS $$ return shared_value $$;
+SELECT set_shared('hello'), get_shared();
+ set_shared | get_shared 
+------------+------------
+            | hello
+(1 row)
+
+-- one-time initialization
+CREATE FUNCTION init_once() RETURNS integer
+LANGUAGE pl_lua AS $$
+  calls = calls + 1
+  return calls
+end
+do
+  calls = 0
+$$;
+SELECT init_once(), init_once(), init_once();
+ init_once | init_once | init_once 
+-----------+-----------+-----------
+         1 |         2 |         3
+(1 row)
+
+-- redefinition is noticed
+CREATE FUNCTION redefine() RETURNS text LANGUAGE pl_lua AS $$ return 'one' $$;
+SELECT redefine();
+ redefine 
+----------
+ one
+(1 row)
+
+CREATE OR REPLACE FUNCTION redefine() RETURNS text LANGUAGE pl_lua AS $$ return 'two' $$;
+SELECT redefine();
+ redefine 
+----------
+ two
+(1 row)
+
+-- syntax errors are reported when the function is created
+CREATE FUNCTION syntax_error() RETURNS integer
+LANGUAGE pl_lua AS $$ return return $$;
+ERROR:  [string "syntax_error"]:1: unexpected symbol near 'return'
+SET check_function_bodies = off;
+CREATE FUNCTION syntax_error() RETURNS integer
+LANGUAGE pl_lua AS $$ return return $$;
+RESET check_function_bodies;
+SELECT syntax_error();
+ERROR:  [string "syntax_error"]:1: unexpected symbol near 'return'
+-- runtime errors
+CREATE FUNCTION runtime_error() RETURNS integer
+LANGUAGE pl_lua AS $$
+  local x = nil
+  return x.field
+$$;
+SELECT runtime_error();
+ERROR:  [string "runtime_error"]:3: attempt to index a nil value (local 'x')
+CREATE FUNCTION error_with_string() RETURNS integer
+LANGUAGE pl_lua AS $$ error("custom message") $$;
+SELECT error_with_string();
+ERROR:  [string "error_with_string"]:1: custom message
+CREATE FUNCTION error_with_table() RETURNS integer
+LANGUAGE pl_lua AS $$ error({ code = 1 }) $$;
+SELECT error_with_table();
+ERROR:  (error object is a table value)
+-- unsupported types
+CREATE FUNCTION bad_ret() RETURNS internal
+LANGUAGE pl_lua AS $$ return nil $$;
+ERROR:  unsafe use of pseudo-type "internal"
+CREATE FUNCTION bad_arg(a internal) RETURNS integer
+LANGUAGE pl_lua AS $$ return 1 $$;
+ERROR:  PL/Lua functions cannot accept type internal
+-- trigger and event trigger functions cannot be called directly
+CREATE FUNCTION trg() RETURNS trigger LANGUAGE pl_lua AS $$ return nil $$;
+SELECT trg();
+ERROR:  trigger functions can only be called as triggers
+CREATE FUNCTION evtrg() RETURNS event_trigger LANGUAGE pl_lua AS $$ return nil $$;
+SELECT evtrg();
+ERROR:  event trigger functions can only be called as event triggers
+-- procedures
+CREATE TABLE basic_log (msg text);
+CREATE PROCEDURE log_it(m text) LANGUAGE pl_lua AS $$
+  spi.execute("INSERT INTO basic_log VALUES ($1)", m)
+$$;
+CALL log_it('first');
+CALL log_it('second');
+SELECT * FROM basic_log ORDER BY msg;
+  msg   
+--------
+ first
+ second
+(2 rows)
+
+CREATE PROCEDURE proc_inout(INOUT a integer, INOUT b text, OUT c integer)
+LANGUAGE pl_lua AS $$ return a + 1, b .. "!", a * 2 $$;
+CALL proc_inout(1, 'x', NULL);
+ a | b  | c 
+---+----+---
+ 2 | x! | 2
+(1 row)
+
+-- DO blocks run in a fresh environment
+DO LANGUAGE pl_lua $$ local_var_in_do = 1; print(local_var_in_do) $$;
+INFO:  1
+DO LANGUAGE pl_lua $$ print(local_var_in_do) $$;
+INFO:  nil
+-- a DO block with a syntax error
+DO LANGUAGE pl_lua $$ this is not lua $$;
+ERROR:  [string "DO-block"]:1: syntax error near 'is'
+DO LANGUAGE pl_lua $$ error("failed in DO") $$;
+ERROR:  [string "DO-block"]:1: failed in DO
+-- function without a trailing newline in a comment
+CREATE FUNCTION trailing_comment() RETURNS integer
+LANGUAGE pl_lua AS $$ return 7 -- done $$;
+SELECT trailing_comment();
+ trailing_comment 
+------------------
+                7
+(1 row)
+
+-- line numbers in messages match the body
+CREATE FUNCTION line_numbers() RETURNS integer
+LANGUAGE pl_lua AS $$
+  local a = 1
+
+  error("on line 4")
+$$;
+SELECT line_numbers();
+ERROR:  [string "line_numbers"]:4: on line 4
+-- nested calls through SPI
+CREATE FUNCTION nested_inner(n integer) RETURNS integer
+LANGUAGE pl_lua AS $$ return n * 2 $$;
+CREATE FUNCTION nested_outer(n integer) RETURNS integer
+LANGUAGE pl_lua AS $$
+  return spi.execute("SELECT nested_inner($1) AS v", n)[1].v + 1
+$$;
+SELECT nested_outer(5);
+ nested_outer 
+--------------
+           11
+(1 row)
+
+-- _G, _VERSION and friends
+DO LANGUAGE pl_lua $$
+  print(_VERSION:match("^Lua 5%.[45]$") ~= nil)
+  print(type(_PLVERSION), type(_PG_VERSION), type(_PG_VERSION_NUM))
+  print(_G == _ENV, type(_PL_LOAD_TIME), _PL_IDENT)
+$$;
+INFO:  true
+INFO:  string	string	number
+INFO:  false	number	
+-- several values returned for an array result make an array
+CREATE FUNCTION arr_from_values() RETURNS integer[] LANGUAGE pl_lua AS $$ return 1, 2, 3 $$;
+CREATE FUNCTION arr_from_table() RETURNS integer[] LANGUAGE pl_lua AS $$ return { 4, 5 } $$;
+CREATE FUNCTION arr_from_none() RETURNS integer[] LANGUAGE pl_lua AS $$ return $$;
+SELECT arr_from_values(), arr_from_table(), arr_from_none() IS NULL;
+ arr_from_values | arr_from_table | ?column? 
+-----------------+----------------+----------
+ {1,2,3}         | {4,5}          | t
+(1 row)
+
+-- function names that are not names in Lua
+CREATE FUNCTION "weird name"() RETURNS text LANGUAGE pl_lua AS $$ return 'a' $$;
+CREATE FUNCTION "1starts_with_a_digit"() RETURNS text LANGUAGE pl_lua AS $$ return 'b' $$;
+CREATE FUNCTION "end"() RETURNS text LANGUAGE pl_lua AS $$ return 'c' $$;
+CREATE FUNCTION "a-b.c"() RETURNS text LANGUAGE pl_lua AS $$ return 'd' $$;
+CREATE FUNCTION "ünïcode"() RETURNS text LANGUAGE pl_lua AS $$ return 'e' $$;
+CREATE FUNCTION "weird name"(integer) RETURNS text LANGUAGE pl_lua AS $$ error("in a weird name") $$;
+SELECT "weird name"(), "1starts_with_a_digit"(), "end"(), "a-b.c"();
+ weird name | 1starts_with_a_digit | end | a-b.c 
+------------+----------------------+-----+-------
+ a          | b                    | c   | d
+(1 row)
+
+SELECT "ünïcode"() AS unicode_name;
+ unicode_name 
+--------------
+ e
+(1 row)
+
+SELECT "weird name"(1);
+ERROR:  [string "weird name"]:1: in a weird name
+-- a record result needs a column definition list
+SELECT rec_fn();
+ERROR:  function returning record called in context that cannot accept type record
+-- the settings for the extra garbage collection, for the memory that lives
+-- outside Lua, do not change what functions do
+SET pl_lua.extra_gc_threshold = 1;
+SET pl_lua.extra_gc_multiplier = 1;
+CREATE FUNCTION gc_settings(n integer) RETURNS integer LANGUAGE pl_lua AS $$
+  for i = 1, n do
+    local st = spi.prepare("select $1::int + " .. i, { 'integer' })
+    assert(st(1)[1]['?column?'] == 1 + i)
+  end
+  return n
+$$;
+SELECT gc_settings(50);
+ gc_settings 
+-------------
+          50
+(1 row)
+
+SET pl_lua.extra_gc_multiplier = 1000000;
+SELECT gc_settings(20);
+ gc_settings 
+-------------
+          20
+(1 row)
+
+SET pl_lua.extra_gc_multiplier = 0;
+SELECT gc_settings(5);
+ gc_settings 
+-------------
+           5
+(1 row)
+
+RESET pl_lua.extra_gc_threshold;
+RESET pl_lua.extra_gc_multiplier;

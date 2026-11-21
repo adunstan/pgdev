@@ -1,0 +1,1827 @@
+<!-- doc/src/sgml/pl_lua.sgml -->
+
+<chapter id="pllua">
+ <title>PL/Lua &mdash; Lua Procedural Language</title>
+
+ <indexterm zone="pllua">
+  <primary>PL/Lua</primary>
+ </indexterm>
+
+ <indexterm zone="pllua">
+  <primary>Lua</primary>
+ </indexterm>
+
+ <para>
+  PL/Lua lets you write <productname>PostgreSQL</productname> functions,
+  procedures, triggers and anonymous code blocks in the
+  <ulink url="https://www.lua.org">Lua</ulink> programming language.
+  Lua is a small, fast language designed to be embedded in other programs.
+  The language is the 5.4 version of Lua (release 5.4.6 or later), or
+  Lua 5.5, whichever PL/Lua was built with.
+ </para>
+
+ <para>
+  Simple <productname>PostgreSQL</productname> values, such as numbers,
+  strings and booleans, become the corresponding Lua values.  Values of
+  all other types are represented by <firstterm>datum objects</firstterm>,
+  which keep the SQL type of the value and can be indexed, iterated and
+  converted to and from Lua tables where that makes sense.
+  Lua code reaches the database through the <literal>spi</literal> module,
+  described in <xref linkend="pllua-spi"/>.
+ </para>
+
+ <note>
+  <para>
+   PL/Lua is built only if requested when <productname>PostgreSQL</productname>
+   is configured; see <xref linkend="installation"/>.  Binary packages
+   might provide it as a separate package.
+  </para>
+ </note>
+
+ <sect1 id="pllua-install">
+  <title>Installing PL/Lua</title>
+
+  <indexterm zone="pllua-install">
+   <primary>trusted</primary>
+   <secondary>PL/Lua</secondary>
+  </indexterm>
+
+  <para>
+   PL/Lua provides two languages, installed by two extensions that share
+   one library:
+<programlisting>
+CREATE EXTENSION pl_lua;    -- trusted language pl_lua
+CREATE EXTENSION pl_luau;   -- untrusted language pl_luau
+</programlisting>
+   Either or both can be installed in a database.  If a language is
+   installed in <literal>template1</literal>, it is installed in every
+   database created afterwards.
+  </para>
+
+  <para>
+   Code in the trusted language <literal>pl_lua</literal> runs in a
+   sandbox (see <xref linkend="pllua-sandbox"/>) that does not provide
+   access to the file system, to other programs, or to arbitrary Lua
+   modules, so any user who has been granted <literal>USAGE</literal> on
+   the language can write functions in it.  Code in the untrusted language
+   <literal>pl_luau</literal> has the complete Lua standard library, including
+   <literal>io</literal>, <literal>os</literal> and <literal>debug</literal>,
+   and can load any module; it can do anything the operating system
+   account running the server can do, and so only superusers can create
+   functions in it.
+  </para>
+
+  <para>
+   Each session has its own Lua interpreter state for
+   <literal>pl_luau</literal> and one for <literal>pl_lua</literal> for each
+   role that runs trusted code.  The role is the current user at the time
+   of the call, so a <literal>SECURITY DEFINER</literal> function runs in
+   the state belonging to its owner.  Global variables set by one role's
+   code are never visible to another role, and the two languages share no
+   Lua data.
+  </para>
+ </sect1>
+
+ <sect1 id="pllua-functions">
+  <title>Writing Functions</title>
+
+  <para>
+   PL/Lua functions are created with the usual
+   <xref linkend="sql-createfunction"/> command, giving the body of a Lua
+   function as the function body:
+<programlisting>
+CREATE FUNCTION greet(name text) RETURNS text AS $$
+    return "Hello, " .. name .. "!"
+$$ LANGUAGE pl_lua;
+
+SELECT greet('world');
+</programlisting>
+   Procedures are created with <xref linkend="sql-createprocedure"/>, and
+   anonymous blocks of code are run with <xref linkend="sql-do"/>:
+<programlisting>
+DO $$ print("running on " .. _VERSION) $$ LANGUAGE pl_lua;
+</programlisting>
+   An anonymous block takes no arguments, and any value it returns is
+   discarded.
+  </para>
+
+  <sect2 id="pllua-functions-args">
+   <title>Arguments and Results</title>
+
+   <para>
+    The named arguments of a SQL function are the named parameters of the
+    Lua function, so their names must be valid Lua identifiers (and not
+    Lua keywords).  If some arguments have no name, the function also takes
+    a trailing <literal>...</literal> parameter that receives the arguments
+    from the first unnamed one onwards; a named argument may not follow an
+    unnamed one.  A <literal>VARIADIC "any"</literal> argument is passed
+    as separate Lua values in the same way, and so cannot be named; any
+    other variadic argument is passed as one array.
+<programlisting>
+CREATE FUNCTION add2(a integer, b integer) RETURNS integer AS $$
+    return a + b
+$$ LANGUAGE pl_lua;
+
+CREATE FUNCTION mul2(integer, integer) RETURNS integer AS $$
+    local a, b = ...
+    return a * b
+$$ LANGUAGE pl_lua;
+</programlisting>
+    Polymorphic arguments and results are supported.  Use
+    <literal>pgtype(<replaceable>value</replaceable>, <replaceable>n</replaceable>)</literal>
+    (see <xref linkend="pllua-pgtype"/>) to find the actual SQL type of
+    argument number <replaceable>n</replaceable>, which is needed when the
+    argument arrived as a plain Lua value.
+   </para>
+
+   <para>
+    A SQL null is passed as <literal>nil</literal>, and a function that
+    returns <literal>nil</literal> or returns nothing at all returns null.
+    The returned value is converted to the SQL result type by the rules in
+    <xref linkend="pllua-values"/>.
+   </para>
+
+   <para>
+    A function returning a composite type can return a table indexed by
+    column name, a row value, or exactly one Lua value for each column; a
+    function with <literal>OUT</literal> parameters is treated the same way:
+<programlisting>
+CREATE TYPE pair AS (a integer, b text[]);
+
+CREATE FUNCTION make_pair() RETURNS pair AS $$
+    return { a = 123, b = { "x", "y" } }
+$$ LANGUAGE pl_lua;
+
+CREATE FUNCTION two_values(OUT n integer, OUT s text) AS $$
+    return 1, 'one'
+$$ LANGUAGE pl_lua;
+</programlisting>
+    If fewer values are returned than there are columns, the rest are null;
+    returning more is an error.  A procedure's return values, if it has
+    <literal>INOUT</literal> or <literal>OUT</literal> parameters, supply
+    their values in order; otherwise they are ignored.
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-functions-srf">
+   <title>Set-Returning Functions</title>
+
+   <para>
+    A function declared <literal>RETURNS SETOF</literal> or
+    <literal>RETURNS TABLE</literal> runs as a Lua coroutine.  It produces
+    each row by passing the value, or for a composite result the values of
+    the columns, to <function>coroutine.yield</function>; the set ends when
+    the function returns.
+<programlisting>
+CREATE FUNCTION squares(n integer) RETURNS TABLE (i integer, sq integer) AS $$
+    for i = 1, n do
+        coroutine.yield(i, i * i)
+    end
+$$ LANGUAGE pl_lua;
+</programlisting>
+    Yielding no values produces a row of nulls.  A function that returns
+    values without ever having yielded produces a single row from them, and
+    one that returns nothing without yielding produces no rows.
+   </para>
+
+   <para>
+    The function is resumed once per row, so it interleaves with the rest
+    of the query.  If the query stops early, for instance because of a
+    <literal>LIMIT</literal>, the coroutine is closed at once, which runs
+    the handlers of any pending to-be-closed variables
+    (<literal>local x &lt;close&gt;</literal>, including those that generic
+    <literal>for</literal> loops use).
+   </para>
+
+   <para>
+    A set-returning function cannot call <function>coroutine.yield</function>
+    from inside a function run by <function>pcall</function> or
+    <function>xpcall</function>; that raises the error <quote>attempt to yield
+    across a C-call boundary</quote>.  The called function runs in a
+    subtransaction, which could not be left open while the query goes on to
+    other work.  Collect the rows in the protected function and yield them
+    outside it.
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-functions-env">
+   <title>Function Environments</title>
+
+   <para>
+    The first time a function is called in a session, PL/Lua compiles
+    the following Lua chunk and runs it, with a fresh environment table
+    passed in as <literal>self</literal>:
+<programlisting>
+local self = (...) local function <replaceable>name</replaceable>(<replaceable>params</replaceable>) <replaceable>body</replaceable>
+end return <replaceable>name</replaceable>
+</programlisting>
+    The body begins on the first line of the chunk, so line numbers in Lua
+    error messages match the function body.  The environment table is empty
+    but falls back to the global environment (the sandbox, for
+    <literal>pl_lua</literal>).  So a variable assigned without
+    <literal>local</literal> belongs to that function: it persists between
+    calls in the session and is invisible to other functions.  To share data
+    between functions, store it in <literal>_G</literal> explicitly.  The
+    compiled function is kept until the session ends or the function is
+    redefined.
+   </para>
+
+   <para>
+    Because the body is placed inside a function definition, a function
+    can run one-time initialization code by ending the function early and
+    opening a <literal>do</literal> block, whose code runs when the function
+    is compiled:
+<programlisting>
+CREATE FUNCTION lookup(id integer) RETURNS text STABLE AS $$
+    local r = q:execute(id)
+    return r[1] and r[1].value
+end
+do
+    q = spi.prepare("SELECT value FROM objects WHERE id = $1", { "integer" })
+$$ LANGUAGE pl_lua;
+</programlisting>
+    Anonymous blocks are compiled as a chunk and run directly, with a fresh
+    environment, so they have the same variable scoping.
+   </para>
+
+   <para>
+    When <xref linkend="guc-pl-lua-strict"/> is on while a function is
+    compiled, reading a variable that exists in neither the function's
+    environment nor the global environment is an error rather than
+    <literal>nil</literal>; this catches misspelled names.  Assignment to
+    undeclared variables is unaffected.
+   </para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="pllua-values">
+  <title>Values and Types</title>
+
+  <sect2 id="pllua-values-mapping">
+   <title>Conversion Between SQL and Lua</title>
+
+   <para>
+    A value passed from SQL to Lua (an argument, a query result column,
+    an array element and so on) becomes:
+    <itemizedlist>
+     <listitem>
+      <para><literal>nil</literal>, if it is null.</para>
+     </listitem>
+     <listitem>
+      <para>
+       A Lua string, for <type>text</type>, <type>varchar</type>,
+       <type>char</type> (including the padding), <type>name</type>,
+       <type>xml</type>, <type>json</type>, <type>cstring</type> and enum
+       values.  A <type>bytea</type> value becomes a string of its raw
+       bytes, not its escaped text form.
+      </para>
+     </listitem>
+     <listitem>
+      <para>A Lua boolean, for <type>boolean</type>.</para>
+     </listitem>
+     <listitem>
+      <para>
+       A Lua integer, for <type>smallint</type>, <type>integer</type>,
+       <type>bigint</type> and <type>oid</type>; a Lua float, for
+       <type>real</type> and <type>double precision</type>.
+      </para>
+     </listitem>
+     <listitem>
+      <para>A cursor object, for <type>refcursor</type>.</para>
+     </listitem>
+     <listitem>
+      <para>
+       The result of the transform for the type, if the function lists the
+       type in its <literal>TRANSFORM FOR TYPE</literal> clause and a
+       transform exists for the language.
+      </para>
+     </listitem>
+     <listitem>
+      <para>A datum object, for anything else.</para>
+     </listitem>
+    </itemizedlist>
+    Values of a domain type are converted as the base type.  Datum objects
+    can always be converted to text with <function>tostring</function>.
+   </para>
+
+   <para>
+    A Lua value converted to a SQL type (a result, a query parameter, an
+    array element...) is converted like this:
+    <itemizedlist>
+     <listitem>
+      <para><literal>nil</literal> becomes null, for any type.</para>
+     </listitem>
+     <listitem>
+      <para>A datum object of the right type is used as it is.</para>
+     </listitem>
+     <listitem>
+      <para>A Lua boolean converts to <type>boolean</type>.</para>
+     </listitem>
+     <listitem>
+      <para>
+       A Lua string converts to <type>text</type>, <type>varchar</type>,
+       <type>cstring</type> and <type>refcursor</type>, and to
+       <type>bytea</type> by copying its bytes unchanged.  It converts to
+       <type>boolean</type> only if it is
+       <literal>true</literal>, <literal>t</literal>, <literal>1</literal>,
+       <literal>false</literal>, <literal>f</literal> or
+       <literal>0</literal>.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       A Lua number converts to <type>smallint</type>,
+       <type>integer</type>, <type>bigint</type> and <type>oid</type> (it
+       must be an exact integer in range), to <type>real</type>,
+       <type>double precision</type> and <type>numeric</type>, and to
+       <type>boolean</type> only if it is 0 or 1.
+      </para>
+     </listitem>
+     <listitem>
+      <para>A cursor object converts to <type>refcursor</type>.</para>
+     </listitem>
+     <listitem>
+      <para>
+       Otherwise a transform applies, if there is one, or the type's own
+       conversion for <type>jsonb</type> and the date and time types, or,
+       for a string, the type's input function, or, for a table, the
+       constructor for the type (see <xref linkend="pllua-pgtype"/>).  If none
+       of these works, an error is raised.
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+   <para>
+    A transform (see <xref linkend="sql-createtransform"/>) is used only by
+    a function that names the type in its <literal>TRANSFORM</literal>
+    clause.  It then applies to the function's arguments and result and to
+    every other value converted while the function runs, such as query
+    parameters, rows returned by <literal>spi</literal>, array elements and
+    composite columns.  Composite columns and array elements are converted
+    when they are accessed, so a value kept in a global variable and read
+    later is converted under the transform list of the function reading it.
+    Anonymous code blocks have no <literal>TRANSFORM</literal> clause and use
+    no transforms.  For example, with the transform from
+    <xref linkend="pllua-hstore"/>:
+<programlisting>
+CREATE FUNCTION hstore_keys(h hstore) RETURNS text
+TRANSFORM FOR TYPE hstore AS $$
+    local keys = {}
+    for k in pairs(h) do keys[#keys + 1] = k end
+    table.sort(keys)
+    return table.concat(keys, ',')
+$$ LANGUAGE pl_lua;
+</programlisting>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-pgtype">
+   <title>Type Objects and Constructors</title>
+
+   <para>
+    The global table <literal>pgtype</literal>, which is also the module
+    <literal>pl_lua.pgtype</literal>, provides <firstterm>type
+    objects</firstterm> describing SQL types:
+    <variablelist>
+     <varlistentry>
+      <term><literal>pgtype(<replaceable>value</replaceable>)</literal></term>
+      <listitem>
+       <para>
+        The type object of a datum object, or <literal>nil</literal> if the
+        argument is not a datum object.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>pgtype(<replaceable>value</replaceable>, <replaceable>n</replaceable>)</literal></term>
+      <listitem>
+       <para>
+        The type object of a datum object; for any other value, the type
+        object of argument <replaceable>n</replaceable> (counting from 1) of
+        the running function, or of its result type if
+        <replaceable>n</replaceable> is 0.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>pgtype.<replaceable>name</replaceable></literal>, <literal>pgtype['<replaceable>name</replaceable>']</literal></term>
+      <listitem>
+       <para>
+        The type object for the SQL type with that name, or
+        <literal>nil</literal> if there is none.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>pgtype.array.<replaceable>name</replaceable></literal></term>
+      <listitem>
+       <para>
+        The type object for the array type with that element type.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
+   <para>
+    A type object can be called as a constructor, and has these methods:
+    <variablelist>
+     <varlistentry>
+      <term><literal><replaceable>t</replaceable>(...)</literal></term>
+      <listitem>
+       <para>
+        Makes a datum of the type; the arguments depend on the kind of type,
+        as listed below.  Given a single datum of another type, it applies the
+        assignment cast between the two types if there is one.  As in SQL,
+        the current user needs <literal>EXECUTE</literal> privilege on the
+        cast function and on any length-coercion function (for example for
+        <type>varchar(<replaceable>n</replaceable>)</type> columns).
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal><replaceable>t</replaceable>:fromstring(<replaceable>s</replaceable>)</literal></term>
+      <listitem>
+       <para>Makes a datum from its text representation.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal><replaceable>t</replaceable>:frombinary(<replaceable>s</replaceable>)</literal></term>
+      <listitem>
+       <para>
+        Makes a datum from its binary (<literal>send</literal>/<literal>receive</literal>)
+        representation, which for many types depends on <xref linkend="guc-client-encoding"/>.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal><replaceable>t</replaceable>:name([<replaceable>typmod</replaceable>])</literal></term>
+      <listitem>
+       <para>The type's name as SQL syntax, as <function>format_type</function> gives it.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal><replaceable>t</replaceable>:element([<replaceable>column</replaceable>])</literal></term>
+      <listitem>
+       <para>
+        The type object of the element type of an array or range type, or of
+        the named column of a composite type.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal><replaceable>t</replaceable>:kind()</literal></term>
+      <listitem>
+       <para>
+        <literal>composite</literal>, <literal>array</literal> or
+        <literal>range</literal> for a type of that kind (also for a domain
+        over one), and <literal>scalar</literal> for any other type.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
+   <para>
+    The constructor arguments by kind of type are:
+    <variablelist>
+     <varlistentry>
+      <term>Scalar types</term>
+      <listitem>
+       <para>
+        One value, converted as in <xref linkend="pllua-values-mapping"/>.
+        For some types, notably <type>bytea</type>, this differs from
+        <function>fromstring</function>, which parses the text form.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term>Composite types</term>
+      <listitem>
+       <para>
+        Either one table (or other indexable value) giving the columns by
+        name, or one value for each column in order.  Length coercions such as
+        those of <type>varchar(<replaceable>n</replaceable>)</type> columns are applied.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term>Array types</term>
+      <listitem>
+       <para>
+        No arguments gives an empty array.  A table followed by one integer for
+        each dimension gives an array of those dimensions filled from the table
+        by indexing.  A table alone gives a one-dimensional array as long
+        as the table's largest integer key.  Any other arguments become the
+        elements of a one-dimensional array.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term>Range types</term>
+      <listitem>
+       <para>
+        No arguments gives an empty range; one string is parsed as the text
+        form; otherwise the arguments are the lower bound, the upper bound
+        and optionally a bounds string as in
+        <xref linkend="rangetypes-construct"/>.  A <literal>nil</literal> bound
+        is infinite.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+<programlisting>
+local d = pgtype.date('2026-12-01')
+local a = pgtype.array.integer({ { 1, 2 }, { 3, 4 } }, 2, 2)
+local r = pgtype.numrange(1, 2, '[]')
+local p = pgtype.pair({ a = 1, b = { "x", "y" } })
+</programlisting>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-values-composite">
+   <title>Composites, Arrays and Ranges</title>
+
+   <para>
+    A composite datum is indexed by column name or attribute number, and
+    its columns can be assigned to.  Attribute numbers include dropped
+    columns, so they are not always the same as column positions.
+    <function>pairs</function> returns the column name, value and attribute
+    number of each live column in order; do not use
+    <function>ipairs</function>.
+<programlisting>
+CREATE FUNCTION bump(rec pair) RETURNS pair AS $$
+    rec.a = rec.a + 1
+    for name, value, attno in pairs(rec) do print(name, value, attno) end
+    return rec
+$$ LANGUAGE pl_lua;
+</programlisting>
+   </para>
+
+   <para>
+    An array datum is indexed by number, with several subscripts for
+    several dimensions (<literal>a[i][j]</literal>), and its elements can
+    be assigned to.  Assigning outside the bounds of a one-dimensional array
+    extends it, with nulls in between.  <function>pairs</function> and
+    <function>ipairs</function> iterate over it, and <literal>#a</literal> is
+    the length of a one-dimensional array.  A range datum has the read-only
+    fields <literal>lower</literal>, <literal>upper</literal>,
+    <literal>lower_inc</literal>, <literal>upper_inc</literal>,
+    <literal>lower_inf</literal>, <literal>upper_inf</literal> and
+    <literal>isempty</literal>.
+   </para>
+
+   <para>
+    Calling a composite, array or <type>jsonb</type> datum converts it to a Lua table.  The
+    optional argument is a table of options:
+<programlisting>
+row{ map = function(colname, value, attno, row) ... end, null = v, discard = bool }
+array{ map = function(elem, array, i, j, ...) ... end, null = v, discard = bool }
+</programlisting>
+    Nulls are replaced by <replaceable>v</replaceable> (default
+    <literal>nil</literal>) before <literal>map</literal> is called, and an
+    entry for which <literal>map</literal> returns <literal>nil</literal> is
+    left out.  The map function of an array receives one index for each
+    dimension, and a multidimensional array gives nested tables.  If
+    <literal>discard</literal> is true, nothing is returned and the call is
+    made only for what the map function does.  A call with a function as its
+    argument means <literal>{ map = f }</literal>, and with any other
+    non-table argument <literal>{ null = v }</literal>.
+<programlisting>
+CREATE FUNCTION array_sum(a integer[]) RETURNS integer AS $$
+    local total = 0
+    a{ null = 0, discard = true,
+       map = function(v) total = total + v end }
+    return total
+$$ LANGUAGE pl_lua;
+</programlisting>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-values-compare">
+   <title>Comparing Datum Objects</title>
+
+   <para>
+    Two datum objects of the same SQL type can be compared with
+    <literal>==</literal>, <literal>&lt;</literal> and
+    <literal>&lt;=</literal> (and so with <literal>&gt;</literal> and
+    <literal>&gt;=</literal>), using the ordering of the type's default btree
+    operator class.  This works for the date and time types,
+    <type>jsonb</type>, <type>numeric</type>, arrays, composites and any other
+    type with such an operator class.  Datum objects of different types are
+    never equal, and comparing them with <literal>&lt;</literal> raises an
+    error.  A datum object is also never equal to a plain Lua value of any
+    kind, so convert one side first if you need to compare a datum with, say,
+    a Lua string or number.
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-numeric">
+   <title>Numeric Values</title>
+
+   <para>
+    <type>numeric</type> values are datum objects that support the Lua
+    arithmetic and comparison operators with <productname>PostgreSQL</productname>'s
+    exact decimal arithmetic.  An operation between a numeric and a Lua
+    number gives a numeric.  The <literal>//</literal> operator truncates
+    toward zero and <literal>%</literal> takes the sign of the dividend, as in
+    SQL, which differs from Lua's own behavior for numbers.  A numeric never
+    equals a Lua number with <literal>==</literal>, though two numerics with the
+    same value are equal; so numerics are not useful as table keys.
+   </para>
+
+   <para>
+    These functions are methods of numeric values and are also in the module
+    <literal>pl_lua.numeric</literal>, where they also accept Lua numbers:
+    <function>abs</function>, <function>ceil</function>,
+    <function>equal</function>, <function>exp</function>,
+    <function>floor</function>, <function>isnan</function>,
+    <function>sign</function>, <function>sqrt</function>,
+    <function>log</function> (with an optional base),
+    <function>round</function> and <function>trunc</function> (with an
+    optional number of decimal places), <function>tointeger</function>
+    (<literal>nil</literal> unless the value is exactly a Lua integer) and
+    <function>tonumber</function> (an approximate float).  The module's
+    <function>new</function> function, like <literal>pgtype.numeric</literal>,
+    makes a numeric.
+<programlisting>
+local num = require 'pl_lua.numeric'
+local x = pgtype.numeric('1.10') * 3
+print(x, x:round(1), num.equal(x, 3.3))
+</programlisting>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-jsonb">
+   <title>JSON Values</title>
+
+   <para>
+    <type>json</type> values are passed as strings.  <type>jsonb</type>
+    values are datum objects, iterated with <function>pairs</function>
+    and converted to tables by calling them with options:
+<programlisting>
+jsonbval{ map = function(key, value, ...) ... end, null = v, discard = bool,
+          pg_numeric = bool, norecurse = bool }
+</programlisting>
+    The map function receives the key (an index for an array element, a
+    string for an object member, or <literal>nil</literal> for a top-level
+    scalar), the value, and then the keys leading to the current container.
+    The key and value it returns are stored in the result.  Unless
+    <literal>discard</literal> is true, it is also called for each completed
+    container, with a table as the value.  Numbers become Lua numbers unless
+    <literal>pg_numeric</literal> is true, which leaves them as numeric
+    datums; with <literal>norecurse</literal>, nested arrays and objects are
+    returned as <type>jsonb</type> datums.
+   </para>
+
+   <para>
+    To make a <type>jsonb</type> from a Lua value, use
+    <literal>pgtype.jsonb(<replaceable>value</replaceable>, <replaceable>options</replaceable>)</literal>.
+    A function returning <type>jsonb</type> can return the options table as a
+    second value.  The options are:
+<programlisting>
+{ map = function(val) ... end, null = v, empty_object = bool,
+  array_thresh = n, array_frac = n }
+</programlisting>
+    A <firstterm>collection</firstterm> is a table or a value with a
+    <literal>__pairs</literal> metamethod.  Conversion works as follows:
+    <itemizedlist>
+     <listitem>
+      <para>
+       A numeric datum becomes a JSON number, and any other datum is
+       converted as <function>to_jsonb</function> would convert it, which
+       needs <literal>EXECUTE</literal> privilege on that function.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       A table marked as an object or array (see below) becomes one.  An
+       empty collection becomes an empty array, or an empty object if
+       <literal>empty_object</literal> is true.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Any other collection whose keys are all positive integers becomes an
+       array, unless that would insert more than
+       <literal>array_thresh</literal> (default 1000) nulls at the start, or
+       would make the array more than <literal>array_frac</literal>
+       (default 1000) times as long as the number of keys.  Otherwise it
+       becomes an object, if all keys are strings, numbers or values with a
+       <literal>__tostring</literal> metamethod.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       A value raw-equal to <literal>null</literal> is a JSON null; strings,
+       numbers and booleans are the corresponding JSON values; other values with
+       <literal>__tostring</literal> become strings.
+      </para>
+     </listitem>
+    </itemizedlist>
+    The map function, if any, is called for every value including
+    collections, before it is converted, but not for keys.  Tables made from
+    <type>jsonb</type> values are marked as objects or arrays, so converting
+    them back keeps the structure.  Lua tables cannot hold
+    <literal>nil</literal>, so give the same unique <literal>null</literal> value
+    in both directions if JSON nulls must survive, and
+    <literal>pg_numeric</literal> if numbers must keep full precision:
+<programlisting>
+CREATE FUNCTION add_key(val jsonb) RETURNS jsonb AS $$
+    local nullval = {}
+    local t = val{ null = nullval, pg_numeric = true }
+    t.added = { { foo = 1 }, { bar = 2 } }
+    return t, { null = nullval }
+$$ LANGUAGE pl_lua;
+</programlisting>
+   </para>
+
+   <para>
+    The module <literal>pl_lua.jsonb</literal> provides:
+    <variablelist>
+     <varlistentry>
+      <term><function>is_object(t)</function>, <function>is_array(t)</function></term>
+      <listitem>
+       <para>
+        True if the table is marked as an object (or array), false if it is
+        marked as the other, and nothing if it is not marked.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><function>set_as_object(t)</function>, <function>set_as_array(t)</function>, <function>set_as_unknown(t)</function></term>
+      <listitem>
+       <para>
+        Mark the table as an object or array, or remove the mark, and return
+        the table.  The table must not have any other metatable.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><function>pairs(v)</function>, <function>ipairs(v)</function></term>
+      <listitem>
+       <para>
+        Iterate over a <type>jsonb</type> value.  <function>ipairs</function>
+        numbers array elements from 0 and does not stop at a null.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><function>type(v [, lax])</function></term>
+      <listitem>
+       <para>
+        The JSON type of a <type>jsonb</type> value: <literal>array</literal>,
+        <literal>object</literal>, <literal>null</literal>,
+        <literal>number</literal>, <literal>string</literal> or
+        <literal>boolean</literal>.  If <literal>lax</literal> is true, plain Lua
+        values and numerics are classified too; otherwise anything else gives
+        <literal>nil</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-datetime">
+   <title>Date and Time Values</title>
+
+   <para>
+    Values of the types <type>timestamp with time zone</type>,
+    <type>timestamp</type>, <type>date</type>, <type>time</type>,
+    <type>time with time zone</type> and <type>interval</type> are datum
+    objects.  Any field that the SQL <function>extract</function> function
+    accepts (see <xref linkend="functions-datetime-extract"/>) can be read as a
+    field of the object, such as <literal>d.year</literal>, <literal>d.dow</literal>
+    or <literal>d.epoch</literal>.  There are also <literal>isoweek</literal>
+    (the same as <literal>week</literal>), <literal>epoch_msec</literal> and
+    <literal>epoch_usec</literal>.  The method <literal>d:as_table()</literal>
+    returns all the fields as a table; for a <type>timestamp with time zone</type>,
+    <literal>d:as_table(<replaceable>zone</replaceable>)</literal> gives the
+    fields in the given time zone (a full name, not an abbreviation, or a
+    numeric offset) instead of the session's.
+   </para>
+
+   <para>
+    These types are made from a table of fields much as the Lua function
+    <function>os.time</function> does:
+<programlisting>
+pgtype.timestamptz({ year = 2026, month = 3, day = 8, hour = 12 })
+</programlisting>
+    The fields are <literal>year</literal>, <literal>month</literal>,
+    <literal>day</literal>, <literal>hour</literal>, <literal>min</literal>,
+    <literal>sec</literal> (which may have a fraction), <literal>msec</literal>
+    and <literal>usec</literal>, or else <literal>epoch</literal>,
+    <literal>epoch_msec</literal> or <literal>epoch_usec</literal>, and
+    <literal>timezone</literal> (a zone name, an offset string such as
+    <literal>+0100</literal>, a number of seconds, or <literal>true</literal> for
+    the session zone) and <literal>isdst</literal> (used only to resolve
+    times made ambiguous by a daylight saving change).  The table from
+    <function>as_table</function> of a <type>timestamp with time zone</type> also has
+    <literal>timezone_abbrev</literal>, which is ignored on input.
+    Calendar and epoch fields cannot be mixed.  Out-of-range calendar fields are
+    normalized, except for <type>interval</type>; <literal>msec</literal> and
+    <literal>usec</literal> are applied last.  Each calendar field, and the whole
+    seconds of <literal>sec</literal>, must fit in 32 bits.  An infinite value
+    is accepted only with an epoch field, for <type>timestamp</type> and
+    <type>timestamp with time zone</type>.
+   </para>
+
+   <para>
+    The type decides how the fields are used:
+    <variablelist>
+     <varlistentry>
+      <term><type>date</type></term>
+      <listitem>
+       <para>
+        Calendar fields are used as given, and no zone is allowed.  An epoch
+        gives the date containing that instant in the given zone, or UTC.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><type>timestamp with time zone</type></term>
+      <listitem>
+       <para>
+        An epoch gives that instant, and no zone is allowed.  Calendar fields
+        are read in the given zone, or the session zone, and unspecified time
+        fields are zero.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><type>timestamp</type></term>
+      <listitem>
+       <para>
+        An epoch with a zone gives the local time in that zone at that instant;
+        without one it is an offset from 1970-01-01 00:00:00.  Calendar fields
+        are used as given, with no zone.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><type>time</type></term>
+      <listitem>
+       <para>
+        An epoch is an offset from midnight, modulo one day.  Calendar time
+        fields are used; date and zone fields are ignored.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><type>time with time zone</type></term>
+      <listitem>
+       <para>
+        As for <type>time</type>, but the zone must be a numeric or string
+        offset, which becomes the offset of the result.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><type>interval</type></term>
+      <listitem>
+       <para>The fields are added without normalization.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="pllua-spi">
+  <title>Database Access</title>
+
+  <para>
+   Lua code uses the global table <literal>spi</literal>, which is also the
+   module <literal>pl_lua.spi</literal>, to run queries.  A query run by a
+   function that is not <literal>VOLATILE</literal> is read-only and sees the
+   snapshot of the calling query; other queries take a new snapshot each.
+   <literal>spi.readonly()</literal> tells which applies.
+  </para>
+
+  <sect2 id="pllua-spi-queries">
+   <title>Running Queries</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><literal>spi.execute(<replaceable>query</replaceable> [, <replaceable>arg</replaceable>, ...])</literal></term>
+     <term><literal>spi.execute_count(<replaceable>query</replaceable>, <replaceable>maxrows</replaceable> [, <replaceable>arg</replaceable>, ...])</literal></term>
+     <listitem>
+      <para>
+       Run the query with the arguments as <literal>$1</literal>,
+       <literal>$2</literal>, and so on.  A query that returns rows gives a table
+       (possibly empty) of rows, each a composite datum indexed by column name;
+       any other query gives the number of rows it processed.
+       <function>execute_count</function> fetches at most
+       <replaceable>maxrows</replaceable> rows (0 or <literal>nil</literal> means
+       all).
+<programlisting>
+for i, row in ipairs(spi.execute("SELECT relname FROM pg_class WHERE relkind = $1", "r")) do
+    print(row.relname)
+end
+</programlisting>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>spi.rows(<replaceable>query</replaceable> [, <replaceable>arg</replaceable>, ...])</literal></term>
+     <listitem>
+      <para>
+       Returns an iterator over the rows, which are fetched from a cursor in
+       batches rather than all at once.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>spi.prepare(<replaceable>query</replaceable> [, <replaceable>argtypes</replaceable> [, <replaceable>options</replaceable>]])</literal></term>
+     <listitem>
+      <para>
+       Prepares the query and returns a statement object.
+       <replaceable>argtypes</replaceable> is a table of type names or type
+       objects; parameters without one get their types from the query, as in
+       <command>PREPARE</command>.  The same inference is used for queries run
+       directly with <function>spi.execute</function> and the like, except that
+       a parameter for which a datum object is passed has the type of that
+       object, as the parameter of a typed value would, unless it is given
+       another type by the query itself.  Other Lua values do not determine a
+       type: a string is an <type>unknown</type>-type literal, and a number or
+       boolean not constrained by the query is passed in its text form.  Use
+       <function>spi.prepare</function> with explicit types when a parameter
+       must have a particular type.  The options table can contain
+       <literal>scroll</literal>, <literal>no_scroll</literal>,
+       <literal>hold</literal>, <literal>fast_start</literal>,
+       <literal>custom_plan</literal> and <literal>generic_plan</literal> (all
+       booleans), and <literal>fetch_count</literal>, the number of rows an
+       iterator fetches at a time (default 50).  Statement objects are freed by
+       garbage collection and can be kept for the life of the session.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>spi.findcursor(<replaceable>name</replaceable>)</literal></term>
+     <listitem>
+      <para>
+       Returns a cursor object for the open cursor of that name, not owned by
+       the object, or <literal>nil</literal> if there is none.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>spi.newcursor([<replaceable>name</replaceable>])</literal></term>
+     <listitem>
+      <para>
+       Returns the cursor object for the open cursor of that name if there is
+       one; otherwise a new unopened cursor object that will use the name,
+       if given, when it is opened.
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+   <para>
+    A statement object <replaceable>s</replaceable> provides:
+    <literal><replaceable>s</replaceable>:execute([arg, ...])</literal> (also
+    written <literal><replaceable>s</replaceable>(arg, ...)</literal>),
+    <literal>:execute_count(maxrows [, arg, ...])</literal> and
+    <literal>:rows([arg, ...])</literal>, which work like the functions
+    above; <literal>:getcursor([arg, ...])</literal>, which opens and returns
+    an owned cursor with a system-chosen name; and
+    <literal>:numargs()</literal> and <literal>:argtype(n)</literal>.
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-spi-cursors">
+   <title>Cursors</title>
+
+   <para>
+    A cursor object <replaceable>c</replaceable> provides:
+    <variablelist>
+     <varlistentry>
+      <term><literal><replaceable>c</replaceable>:open(<replaceable>query-or-statement</replaceable> [, arg, ...])</literal></term>
+      <listitem>
+       <para>
+        Opens the cursor, which must not already be open, and returns it,
+        owned.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal><replaceable>c</replaceable>:fetch([n [, direction]])</literal>, <literal><replaceable>c</replaceable>:move([n [, direction]])</literal></term>
+      <listitem>
+       <para>
+        Fetch rows as a table, as <function>spi.execute</function> does, or
+        only move.  The direction is <literal>forward</literal> or
+        <literal>next</literal> (the default), <literal>backward</literal> or
+        <literal>prior</literal>, <literal>absolute</literal> or
+        <literal>relative</literal>; <replaceable>n</replaceable> defaults
+        to 1.  <literal>c:move(0, 'absolute')</literal> positions the cursor
+        before the first row.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal><replaceable>c</replaceable>:rows()</literal></term>
+      <listitem>
+       <para>Returns an iterator over the remaining rows.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>:isopen()</literal>, <literal>:close()</literal>, <literal>:name()</literal></term>
+      <listitem>
+       <para>
+        Report whether the cursor is open, close it, and give its name.
+        The object notices when its cursor is closed some other way, such as
+        at the end of the transaction.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>:isowned()</literal>, <literal>:own()</literal>, <literal>:disown()</literal></term>
+      <listitem>
+       <para>
+        Report or change ownership.  An owned cursor is closed when its object
+        is garbage collected, which suits a cursor used only inside a function;
+        a cursor handed back to the caller must be disowned.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+    There is at most one cursor object for an open portal.  A
+    <type>refcursor</type> argument or result is converted to or from a
+    cursor object automatically:
+<programlisting>
+CREATE FUNCTION open_objects() RETURNS refcursor AS $$
+    local c = spi.newcursor('objcur')
+    c:open('SELECT * FROM objects ORDER BY id')
+    return c:disown()
+$$ LANGUAGE pl_lua;
+</programlisting>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-spi-quote">
+   <title>Quoting</title>
+
+   <para>
+    These work like the SQL functions of the same names and raise an error
+    for a string containing a zero byte:
+    <literal>spi.quote_ident(s)</literal>, <literal>spi.quote_literal(s)</literal>
+    (numbers are converted to strings first) and
+    <literal>spi.quote_nullable(v)</literal>, which gives
+    <literal>NULL</literal> for <literal>nil</literal> or no argument.
+    Passing values as query parameters is preferable to quoting them.
+<programlisting>
+spi.execute('ALTER TABLE ' .. spi.quote_ident(tab) .. ' RENAME TO ' .. spi.quote_ident(new))
+</programlisting>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-spi-helpers">
+   <title>Other Convenience Functions</title>
+
+   <para>
+    These functions of the <literal>spi</literal> module are written in Lua,
+    and make common jobs shorter:
+    <variablelist>
+     <varlistentry>
+      <term><literal>spi.return_query(<replaceable>query</replaceable> [, <replaceable>arg</replaceable>, ...])</literal></term>
+      <listitem>
+       <para>
+        For use in a set-returning function: runs the query and yields each of
+        its rows as a row of the function's result, so that
+        <literal>spi.return_query("SELECT ...")</literal> is the same as a loop
+        over <function>spi.rows</function> that yields every row.  If the
+        function returns a composite type (or has several output columns), the
+        columns of the query are matched to those of the result by position;
+        otherwise the query must have one column.  Other rows can be yielded
+        before and after, and the function stops early when the caller does.
+        Elsewhere it raises an error.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>spi.encode_typed_literal(<replaceable>value</replaceable>, <replaceable>typename</replaceable>)</literal></term>
+      <listitem>
+       <para>
+        The text form of <replaceable>value</replaceable> as a value of the
+        named type, without quotes, which is the same as
+        <literal>tostring(pgtype[<replaceable>typename</replaceable>](<replaceable>value</replaceable>))</literal>
+        (<literal>nil</literal> gives <literal>nil</literal>).  Use
+        <function>spi.quote_literal</function> to turn it into a SQL literal.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>spi.encode_array_literal(<replaceable>table</replaceable> [, <replaceable>delimiter</replaceable>])</literal></term>
+      <listitem>
+       <para>
+        The text form of an array, such as <literal>{1,"a b",NULL}</literal>,
+        made from a table of values, or of tables for more dimensions.
+        <literal>nil</literal> in the sequence is an SQL null, and values are
+        converted with <function>tostring</function> and quoted as needed.  The
+        delimiter is a comma unless given.  The length of the sequence is the
+        field <literal>n</literal> of the table if it has one, as one made by
+        <function>table.pack</function> does, which is the way to have nulls
+        in it, and otherwise the length given by the <literal>#</literal>
+        operator, which is not reliable for a table with holes.  The same
+        applies to <function>spi.encode_array_constructor</function>.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>spi.encode_array_constructor(<replaceable>table</replaceable>)</literal></term>
+      <listitem>
+       <para>
+        An <literal>ARRAY[...]</literal> expression with each element as a quoted
+        literal, such as <literal>ARRAY['1','a b',NULL]</literal>, for use in
+        dynamically built SQL.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>spi.looks_like_number(<replaceable>value</replaceable>)</literal></term>
+      <listitem>
+       <para>
+        True for a Lua number, a <type>numeric</type> datum, and a string that is
+        written as a decimal number, possibly with a sign, fraction, exponent
+        and surrounding white space, or is <literal>Inf</literal>,
+        <literal>Infinity</literal> or <literal>NaN</literal>.  Unlike
+        <function>tonumber</function> it is false for hexadecimal strings, and
+        never raises an error.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-spi-transactions">
+   <title>Transaction Control</title>
+
+   <para>
+    A procedure or <command>DO</command> block called from the top level can
+    end transactions with <literal>spi.commit()</literal> and
+    <literal>spi.rollback()</literal>; a new transaction starts automatically.
+    The SQL commands <command>COMMIT</command> and <command>ROLLBACK</command>
+    cannot be run through <literal>spi.execute</literal>.
+    <literal>spi.is_atomic()</literal> is false when transaction control is
+    possible, which it is not inside <function>pcall</function>, whose body runs
+    in a subtransaction.  Cursors from statements prepared without the
+    <literal>hold</literal> option are closed when the transaction ends.
+<programlisting>
+CREATE PROCEDURE keep_evens() AS $$
+    for i = 0, 9 do
+        spi.execute("INSERT INTO t(a) VALUES ($1)", i)
+        if i % 2 == 0 then spi.commit() else spi.rollback() end
+    end
+$$ LANGUAGE pl_lua;
+</programlisting>
+   </para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="pllua-errors">
+  <title>Messages and Errors</title>
+
+  <sect2 id="pllua-errors-raise">
+   <title>Reporting Messages</title>
+
+   <para>
+    The global function <function>print</function> sends its arguments,
+    separated by tabs, to the client as an <literal>INFO</literal> message
+    (to the server log, as <literal>LOG</literal>, when called from an
+    initialization setting).  Other messages and errors are raised with
+    these functions, which are in the <literal>spi</literal> table and in the
+    module <literal>pl_lua.elog</literal>:
+<programlisting>
+spi.elog(level, message)
+spi.elog(level, sqlstate, message [, detail [, hint]])
+spi.elog(level, { sqlstate = ..., message = ..., detail = ..., hint = ...,
+                  table = ..., column = ..., datatype = ..., constraint = ...,
+                  schema = ... })
+spi.debug(...)   spi.log(...)   spi.info(...)
+spi.notice(...)  spi.warning(...)  spi.error(...)
+</programlisting>
+    The level is one of <literal>debug</literal>, <literal>log</literal>,
+    <literal>info</literal>, <literal>notice</literal>,
+    <literal>warning</literal> or <literal>error</literal>; the other functions
+    each use the level of their name.  The <literal>sqlstate</literal> is a
+    five-character code or a condition name from <xref linkend="errcodes-appendix"/>.
+    Whether a message reaches the client or the log depends on
+    <xref linkend="guc-client-min-messages"/> and <xref linkend="guc-log-min-messages"/>.
+    An error without a SQLSTATE uses <literal>XX000</literal>.
+<programlisting>
+spi.error('invalid_parameter_value', 'value out of range', 'value was ' .. v)
+</programlisting>
+    An error aborts the transaction or subtransaction unless
+    <function>pcall</function> catches it.  The standard Lua
+    <function>error</function> function also works; an uncaught Lua error is
+    reported with the Lua message and SQLSTATE <literal>38000</literal>
+    (<literal>external_routine_exception</literal>), but an error object
+    that <function>error</function> rethrows keeps its own SQLSTATE.
+    Message text, including the arguments of <function>print</function> and
+    <function>warn</function>, Lua error messages, and every field passed to
+    these functions, must be valid in the database encoding; if it is not,
+    an error with SQLSTATE <literal>22021</literal> is raised instead.
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-errors-catch">
+   <title>Catching Errors</title>
+
+   <para>
+    In PL/Lua, <function>pcall</function> and <function>xpcall</function> run
+    the called function in a subtransaction, so they can catch SQL errors as
+    well as Lua errors.  On an error the subtransaction is rolled back,
+    undoing the database changes the function made, and the error is
+    returned as usual; otherwise the subtransaction is committed.
+    <function>xpcall</function> ends the subtransaction before it calls the
+    message handler.  Query cancellation and other operator interventions
+    cannot be caught.
+<programlisting>
+CREATE FUNCTION try_insert(k integer, v text) RETURNS boolean AS $$
+    local ok, err = pcall(spi.execute, "INSERT INTO objects VALUES ($1, $2)", k, v)
+    if not ok then
+        if err.errcode == 'unique_violation' then return false end
+        error(err)
+    end
+    return true
+$$ LANGUAGE pl_lua;
+</programlisting>
+    <function>lpcall</function> is a lighter version of
+    <function>pcall</function> that starts no subtransaction.  It catches
+    Lua errors but passes SQL errors on at once, so it is useful mainly for
+    code that does not use the database.  Likewise
+    <function>coroutine.resume</function> passes SQL errors on instead of
+    returning them.
+   </para>
+  </sect2>
+
+  <sect2 id="pllua-errors-objects">
+   <title>Error Objects</title>
+
+   <para>
+    A SQL error caught in Lua code is an error object, not a string;
+    <function>tostring</function> gives <literal>ERROR:</literal>, the SQLSTATE and
+    the message, followed by any detail and hint.  The fields
+    <literal>sqlstate</literal> (the five-character code),
+    <literal>errcode</literal> (the condition name, or the code if it has
+    none), <literal>category</literal> (the name of the error class, or the class
+    code), <literal>severity</literal> (always <literal>error</literal>) and
+    <literal>message</literal> are always present.  These are present when the
+    error supplied them: <literal>detail</literal>, <literal>hint</literal>,
+    <literal>context</literal>, <literal>schema</literal>, <literal>table</literal>,
+    <literal>column</literal>, <literal>datatype</literal>,
+    <literal>constraint</literal>, <literal>position</literal> and
+    <literal>internal_position</literal> (integers),
+    <literal>internal_query</literal>, <literal>message_id</literal> (the
+    untranslated message), <literal>pg_source_file</literal>,
+    <literal>pg_source_line</literal> (an integer) and
+    <literal>pg_source_function</literal>.
+   </para>
+
+   <para>
+    The module <literal>pl_lua.error</literal> has the functions
+    <function>type</function>, <function>errcode</function> and
+    <function>category</function>.  <literal>type(e)</literal> is
+    <literal>error</literal> for an error object; the other two return the
+    field of that name.  All return nothing for any other value, which makes
+    it easy to tell SQL errors from ordinary Lua errors.
+   </para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="pllua-triggers">
+  <title>Trigger Functions</title>
+
+  <indexterm zone="pllua-triggers">
+   <primary>trigger</primary>
+   <secondary>in PL/Lua</secondary>
+  </indexterm>
+
+  <para>
+   A trigger function has no declared arguments and returns
+   <type>trigger</type>.  Its Lua parameters are <literal>(trigger, old, new,
+   ...)</literal>: the trigger object described below, the old and new rows
+   (or <literal>nil</literal> where there are none), and the arguments given
+   in <command>CREATE TRIGGER</command>, as strings.  The trigger object has
+   these read-only fields, except that <literal>row</literal> can be assigned
+   to:
+   <variablelist>
+    <varlistentry>
+     <term><literal>new</literal>, <literal>old</literal></term>
+     <listitem><para>The same as the parameters.</para></listitem>
+    </varlistentry>
+    <varlistentry>
+     <term><literal>row</literal></term>
+     <listitem>
+      <para>
+       The row the trigger returns by default: <literal>new</literal> for
+       inserts and updates, <literal>old</literal> for deletes.
+      </para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term><literal>name</literal>, <literal>when</literal>, <literal>operation</literal> (or <literal>op</literal>), <literal>level</literal></term>
+     <listitem>
+      <para>
+       The trigger name; <literal>before</literal>, <literal>after</literal>
+       or <literal>instead</literal>; <literal>insert</literal>,
+       <literal>update</literal>, <literal>delete</literal> or
+       <literal>truncate</literal>; <literal>row</literal> or
+       <literal>statement</literal>.
+      </para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term><literal>relation</literal></term>
+     <listitem>
+      <para>
+       A table with <literal>name</literal>, <literal>namespace</literal>,
+       <literal>oid</literal> and <literal>attributes</literal>, which maps
+       column names to attribute numbers.
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+   The columns of <literal>old</literal> and <literal>new</literal> can be
+   assigned to.  The return value matters only for row-level
+   <literal>BEFORE</literal> and <literal>INSTEAD OF</literal> triggers, where
+   the function can:
+   <itemizedlist>
+    <listitem>
+     <para>
+      return no value at all, to go ahead using <literal>trigger.row</literal>
+      with any changes made to it;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      return a row, or a table indexed by column name, to be converted to
+      the table's row type and used instead;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      return <literal>nil</literal>, or set <literal>trigger.row</literal> to
+      <literal>nil</literal>, to skip the operation for this row.
+     </para>
+    </listitem>
+   </itemizedlist>
+<programlisting>
+CREATE FUNCTION set_total() RETURNS trigger AS $$
+    new.total_cost = new.price * new.qty
+$$ LANGUAGE pl_lua;
+
+CREATE TRIGGER orders_total BEFORE INSERT OR UPDATE ON orders
+    FOR EACH ROW EXECUTE FUNCTION set_total();
+</programlisting>
+  </para>
+
+  <sect2 id="pllua-event-triggers">
+   <title>Event Trigger Functions</title>
+
+   <para>
+    An event trigger function (see <xref linkend="event-triggers"/>) returns
+    <type>event_trigger</type> and has the one parameter
+    <literal>trigger</literal>, with the fields <literal>event</literal> and
+    <literal>tag</literal>.
+<programlisting>
+CREATE FUNCTION log_ddl() RETURNS event_trigger AS $$
+    print(trigger.event, trigger.tag)
+$$ LANGUAGE pl_lua;
+</programlisting>
+   </para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="pllua-sandbox">
+  <title>The Trusted Sandbox</title>
+
+  <para>
+   Functions and blocks in the trusted language <literal>pl_lua</literal>
+   run with a sandbox as their global environment, separate from the real
+   one.  The sandbox contains only:
+   <itemizedlist>
+    <listitem>
+     <para>
+      the basic functions <function>assert</function>,
+      <function>collectgarbage</function>, <function>error</function>,
+      <function>getmetatable</function>, <function>ipairs</function>,
+      <function>next</function>, <function>pairs</function>,
+      <function>rawequal</function>, <function>rawlen</function>,
+      <function>rawget</function>, <function>rawset</function>,
+      <function>select</function>, <function>setmetatable</function>,
+      <function>tonumber</function>, <function>tostring</function>,
+      <function>type</function> and <function>warn</function>, and the
+      PL/Lua versions of <function>print</function>,
+      <function>pcall</function>, <function>xpcall</function> and
+      <function>lpcall</function>;
+     </para>
+     <para>
+      <function>setmetatable</function> does not accept a metatable that has
+      a <literal>__gc</literal> field, so trusted code cannot define
+      finalizers.  The garbage collector can start at any allocation, including
+      those made by PL/Lua's own code while it works with the database, and a
+      finalizer would run user code at such a point.  The
+      <literal>__close</literal> metamethod, for to-be-closed variables, is
+      available for cleanup.  The untrusted language has no such restriction;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      a <function>load</function> that accepts only text chunks (loading
+      precompiled chunks is unsafe) and runs them in the sandbox unless given
+      an environment;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      copies of the libraries <literal>coroutine</literal>,
+      <literal>math</literal>, <literal>string</literal>,
+      <literal>table</literal> and <literal>utf8</literal>, except that there is no
+      <function>string.dump</function>, which would let trusted code read
+      the compiled form, including the constants, of any function it can call
+      but did not write, such as one from a module an administrator has made
+      available.  <function>string.dump</function> is also missing from the
+      code in <varname>pl_lua.on_trusted_init</varname>, but is available in
+      <literal>pl_luau</literal>;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      an <literal>os</literal> library with only <function>clock</function>,
+      <function>date</function>, <function>difftime</function> and
+      <function>time</function>;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      a restricted <literal>package</literal> and <function>require</function>,
+      which load only modules that have been allowed (see below) or that
+      sandbox code supplies through <literal>package.preload</literal> or
+      <literal>package.searchers</literal>;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      the PL/Lua modules <literal>pl_lua.spi</literal>,
+      <literal>pl_lua.pgtype</literal>, <literal>pl_lua.elog</literal>,
+      <literal>pl_lua.error</literal>, <literal>pl_lua.numeric</literal>,
+      <literal>pl_lua.jsonb</literal> and <literal>pl_lua.time</literal>, and
+      (if <xref linkend="guc-pl-lua-install-globals"/> is on) the global tables
+      <literal>spi</literal> and <literal>pgtype</literal>;
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      the globals <literal>_VERSION</literal>, <literal>_PLVERSION</literal>,
+      <literal>_PLREVISION</literal>, <literal>_PG_VERSION</literal>,
+      <literal>_PG_VERSION_NUM</literal>, <literal>_PL_IDENT</literal>,
+      <literal>_PL_LOAD_TIME</literal>, and <literal>_G</literal>, which
+      is the sandbox.
+     </para>
+    </listitem>
+   </itemizedlist>
+   The module <literal>pl_lua.paths</literal>, available only in
+   <literal>pl_luau</literal> and in the initialization settings, has the
+   functions <function>bin</function>, <function>lib</function>,
+   <function>pkglib</function> (and <function>libdir</function>, the directory
+   that <literal>$libdir</literal> means), <function>share</function>,
+   <function>locale</function>, <function>doc</function>,
+   <function>etc</function>, <function>html</function>,
+   <function>include</function>, <function>includeserver</function>,
+   <function>man</function> and <function>pkginclude</function>, which return
+   the corresponding installation directories.  Some might not exist.
+  </para>
+
+  <sect2 id="pllua-sandbox-modules">
+   <title>Allowing More Modules</title>
+
+   <para>
+    The initialization settings <varname>pl_lua.on_init</varname> and
+    <varname>pl_lua.on_trusted_init</varname> run outside the sandbox and can
+    use the module <literal>pl_lua.trusted</literal> to make other modules
+    available inside it.  It is the global <literal>trusted</literal> in
+    <varname>pl_lua.on_trusted_init</varname> (if
+    <varname>pl_lua.install_globals</varname> is on), and must be fetched with
+    <literal>require 'pl_lua.trusted'</literal> in
+    <varname>pl_lua.on_init</varname>.  For example,
+<programlisting>
+pl_lua.on_trusted_init = 'trusted.allow{"lpeg", "re"}'
+</programlisting>
+    makes the modules <literal>lpeg</literal> and <literal>re</literal>
+    available to <function>require</function> in the sandbox.
+   </para>
+
+   <warning>
+    <para>
+     The administrator must judge whether a module is safe to expose to
+     trusted code.  Many modules, written in Lua or in C, can be used to break
+     security or crash the server.  Warning signs are input/output or network
+     facilities; code that assumes the caller's <literal>_G</literal> or
+     <literal>_ENV</literal> is its own, or exposes its own
+     <literal>_G</literal>; and C code that uses <function>lua_pcall</function>
+     or <function>lua_resume</function> to call code that might raise an SQL
+     error.  For anything more complex than <literal>lpeg</literal>, consider
+     whether the untrusted language is a better fit.
+    </para>
+   </warning>
+
+   <variablelist>
+    <varlistentry>
+     <term><literal>trusted.allow(<replaceable>module</replaceable> [, <replaceable>newname</replaceable> [, <replaceable>mode</replaceable> [, <replaceable>global</replaceable> [, <replaceable>preload</replaceable>]]]])</literal></term>
+     <listitem>
+      <para>
+       Makes the module available in the sandbox as
+       <literal>require 'newname'</literal> (by default under its own name).
+       It is not loaded until first required, unless
+       <replaceable>global</replaceable> or <replaceable>preload</replaceable>
+       is true.  If <replaceable>global</replaceable> is true or a string, the
+       module is also stored in a sandbox global variable, named by the
+       string or else by <replaceable>newname</replaceable>.  Preloading
+       is useful for loading modules before the server forks when interpreters
+       are prebuilt (see <xref linkend="pllua-config"/>).  The
+       <replaceable>mode</replaceable> says how the sandbox sees the module:
+       <literal>direct</literal> gives the module table itself,
+       <literal>copy</literal> a recursive copy without metatables,
+       <literal>scopy</literal> a shallow copy, <literal>proxy</literal> (the
+       default) a proxy table whose <literal>__index</literal> is the module
+       with nested tables proxied likewise, and <literal>sproxy</literal> a
+       proxy without the recursion.  All behave like <literal>direct</literal>
+       if the module is not a table.  A function can also be given, which
+       receives the module and returns what to expose.  A proxy protects the
+       module itself from change but is not a security boundary: tables returned
+       by the module's functions can still be changed.  Neither proxy nor copy
+       works for every module; those that use tables as keys or unique
+       identifiers, or rely on metatables other than <literal>__call</literal>,
+       are likely to fail.  If <replaceable>module</replaceable> is a table, it
+       is a list whose elements are module names or tables
+       <literal>{ module, newname, mode, global, preload }</literal>, with the
+       other arguments filling in missing values.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>trusted.require(<replaceable>module</replaceable> [, <replaceable>newname</replaceable> [, <replaceable>mode</replaceable>]])</literal></term>
+     <listitem>
+      <para>
+       The same as <literal>trusted.allow(module, newname, mode, true)</literal>:
+       the module is loaded at once and stored as a global in the sandbox.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>trusted.remove(<replaceable>newname</replaceable> [, <replaceable>global</replaceable>])</literal></term>
+     <listitem>
+      <para>
+       Undoes <function>trusted.allow</function>.  If
+       <replaceable>global</replaceable> is a string, the sandbox global of that
+       name is removed too; if it is true, the one named
+       <replaceable>newname</replaceable> is.  This can also remove standard
+       modules, for example <literal>trusted.remove('os', true)</literal>.
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </sect2>
+ </sect1>
+
+ <sect1 id="pllua-config">
+  <title>Configuration</title>
+
+  <para>
+   An interpreter is created on demand: the first time PL/Lua code runs in a
+   session, and again for trusted code run as a role that has none yet.
+   If <literal>pl_lua</literal> is listed in
+   <xref linkend="guc-shared-preload-libraries"/>, interpreters are instead
+   partly built in the postmaster and inherited by server processes, which
+   saves start-up time in each session and lets modules loaded by
+   <varname>pl_lua.on_init</varname> be shared.  (On platforms where server
+   processes are started afresh rather than forked, such as Windows, this
+   cannot work, and interpreters are always built on demand.)  Beware that an error in
+   <varname>pl_lua.on_init</varname> then stops the server from starting.
+   Creating an interpreter takes these steps:
+   <orderedlist>
+    <listitem>
+     <para>
+      The standard Lua libraries are loaded; <function>print</function>,
+      <function>pcall</function>, <function>xpcall</function> and
+      <function>coroutine.resume</function> are replaced by the PL/Lua versions
+      and <function>lpcall</function> is added; the modules
+      <literal>pl_lua.trusted</literal> and <literal>pl_lua.paths</literal> are loaded;
+      and <varname>pl_lua.on_init</varname> is run.  This much can happen in
+      the postmaster, so database access is not possible.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      The other PL/Lua modules are loaded, the globals are set up, and, for a
+      trusted interpreter, the sandbox is built.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <varname>pl_lua.on_trusted_init</varname> or
+      <varname>pl_lua.on_untrusted_init</varname> is run, outside the sandbox.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <varname>pl_lua.on_common_init</varname> is run, inside the sandbox in a
+      trusted interpreter.
+     </para>
+    </listitem>
+   </orderedlist>
+   An error in any of them stops the creation of the interpreter and is
+   reported as an error of the query that needed it.
+  </para>
+
+  <variablelist>
+   <varlistentry id="guc-pl-lua-on-init" xreflabel="pl_lua.on_init">
+    <term><varname>pl_lua.on_init</varname> (<type>string</type>)
+    <indexterm><primary><varname>pl_lua.on_init</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      Lua code run in step 1 above, before the interpreter is specialized
+      as trusted or untrusted.  It can load modules, which will then be
+      available to untrusted code, and can use
+      <literal>require 'pl_lua.trusted'</literal> to make modules available to
+      trusted code.  Only superusers and users with the appropriate
+      <literal>SET</literal> privilege can change it.  Changing it in a session
+      does not affect existing interpreters.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-on-trusted-init" xreflabel="pl_lua.on_trusted_init">
+    <term><varname>pl_lua.on_trusted_init</varname> (<type>string</type>)
+    <indexterm><primary><varname>pl_lua.on_trusted_init</varname> configuration parameter</primary></indexterm>
+    </term>
+    <term><varname>pl_lua.on_untrusted_init</varname> (<type>string</type>)
+    <indexterm><primary><varname>pl_lua.on_untrusted_init</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      Lua code run in step 3 for a trusted or untrusted interpreter.  Database
+      access is possible.  The code runs outside the sandbox, so it can use
+      <literal>trusted</literal> (see <xref linkend="pllua-sandbox-modules"/>), but
+      like sandbox code it has no <function>string.dump</function>.  Only
+      superusers and users with the appropriate <literal>SET</literal> privilege
+      can change these.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-on-common-init" xreflabel="pl_lua.on_common_init">
+    <term><varname>pl_lua.on_common_init</varname> (<type>string</type>)
+    <indexterm><primary><varname>pl_lua.on_common_init</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      Lua code run last for every interpreter (step 4), inside the sandbox
+      in a trusted interpreter.  Only superusers and users with the
+      appropriate <literal>SET</literal> privilege can change it.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-install-globals" xreflabel="pl_lua.install_globals">
+    <term><varname>pl_lua.install_globals</varname> (<type>boolean</type>)
+    <indexterm><primary><varname>pl_lua.install_globals</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      When on (the default), the modules <literal>spi</literal> and
+      <literal>pgtype</literal> are stored in global variables of those names,
+      both in the real global environment and in the sandbox, and
+      <literal>pl_lua.trusted</literal> is stored as the global
+      <literal>trusted</literal> outside the sandbox.  When off, code must call
+      <function>require</function>.  It takes effect when an interpreter is
+      created.  Only superusers and users with the appropriate
+      <literal>SET</literal> privilege can change it.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-strict" xreflabel="pl_lua.strict">
+    <term><varname>pl_lua.strict</varname> (<type>boolean</type>)
+    <indexterm><primary><varname>pl_lua.strict</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      When on, reading a variable found in neither the function's own
+      environment nor the global environment is an error instead of
+      <literal>nil</literal>.  Assignments are not affected.  It applies to
+      functions and blocks compiled after it is changed; functions already
+      compiled in the session keep their behavior.  The default is off.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-check-for-interrupts" xreflabel="pl_lua.check_for_interrupts">
+    <term><varname>pl_lua.check_for_interrupts</varname> (<type>boolean</type>)
+    <indexterm><primary><varname>pl_lua.check_for_interrupts</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      When on (the default), a Lua hook checks for query cancel requests and
+      other interrupts while Lua code runs, so that a long-running function can
+      be canceled.  It takes effect when an interpreter is created.  Only
+      superusers and users with the appropriate <literal>SET</literal>
+      privilege can change it.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-prebuilt-interpreters" xreflabel="pl_lua.prebuilt_interpreters">
+    <term><varname>pl_lua.prebuilt_interpreters</varname> (<type>integer</type>)
+    <indexterm><primary><varname>pl_lua.prebuilt_interpreters</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      When <literal>pl_lua</literal> is loaded through
+      <varname>shared_preload_libraries</varname>, how many interpreters the
+      postmaster builds, from 0 to 10; the default is 1.
+      <varname>pl_lua.on_init</varname> runs separately in each.  More are
+      always created on demand when these are used up, so building more than one
+      helps only if most sessions use both languages, or trusted code as more
+      than one role.  Changing the setting causes the prebuilt interpreters to
+      be built again.  This can be set only in
+      <filename>postgresql.conf</filename> or on the server command line.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-interpreter-reload-ident" xreflabel="pl_lua.interpreter_reload_ident">
+    <term><varname>pl_lua.interpreter_reload_ident</varname> (<type>string</type>)
+    <indexterm><primary><varname>pl_lua.interpreter_reload_ident</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      When <literal>pl_lua</literal> is loaded through
+      <varname>shared_preload_libraries</varname>, changing this causes the
+      prebuilt interpreters to be discarded and built again.  While it is not
+      empty, changing <varname>pl_lua.on_init</varname> in the configuration
+      file has the same effect; otherwise the interpreters are rebuilt only when
+      the server restarts.  The value is stored in new interpreters as the global
+      <literal>_PL_IDENT</literal>; when it changes, interpreters in running
+      sessions get the new value in <literal>_PL_IDENT_NEW</literal> before their
+      next use.  This can be set only in <filename>postgresql.conf</filename> or
+      on the server command line.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="guc-pl-lua-extra-gc-multiplier" xreflabel="pl_lua.extra_gc_multiplier">
+    <term><varname>pl_lua.extra_gc_multiplier</varname> (<type>floating point</type>)
+    <indexterm><primary><varname>pl_lua.extra_gc_multiplier</varname> configuration parameter</primary></indexterm>
+    </term>
+    <term><varname>pl_lua.extra_gc_threshold</varname> (<type>floating point</type>)
+    <indexterm><primary><varname>pl_lua.extra_gc_threshold</varname> configuration parameter</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      The Lua garbage collector does not know about memory that is kept
+      outside Lua for the objects that refer to it, namely the plans of prepared
+      statements, so it might not run as often as it should in a function that
+      makes many of them.  (The values of datum objects are held in Lua's own
+      memory, and are counted by the collector.)  If <varname>pl_lua.extra_gc_multiplier</varname> is above zero,
+      PL/Lua estimates that memory, and once it reaches
+      <varname>pl_lua.extra_gc_threshold</varname> kilobytes it does an
+      incremental collection step, proportional to the amount times the
+      multiplier, before returning from Lua code.  The largest multiplier,
+      1000000, does a full collection instead.  Both default to 0, which
+      means no extra collection.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect1>
+
+ <sect1 id="pllua-hstore">
+  <title>The <type>hstore</type> Transforms</title>
+
+  <para>
+   The extensions <literal>hstore_pl_lua</literal> (for
+   <literal>pl_lua</literal>) and <literal>hstore_pl_luau</literal> (for
+   <literal>pl_luau</literal>) provide transforms for the
+   <type>hstore</type> type.  A function declared with
+   <literal>TRANSFORM FOR TYPE hstore</literal> receives <type>hstore</type>
+   values as Lua tables and converts returned tables to <type>hstore</type>.
+   Keys with null values are left out of the table, because Lua tables cannot
+   hold <literal>nil</literal>.  When converting a table to
+   <type>hstore</type>, keys must be strings or numbers and values must be
+   strings, numbers, booleans or objects with a <literal>__tostring</literal>
+   method; all are converted to text.
+  </para>
+ </sect1>
+</chapter>

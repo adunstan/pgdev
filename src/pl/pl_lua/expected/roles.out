@@ -1,0 +1,113 @@
+--
+-- State is kept apart for each role
+--
+\set VERBOSITY terse
+CREATE ROLE regress_pll_a;
+CREATE ROLE regress_pll_b;
+GRANT ALL ON SCHEMA public TO regress_pll_a, regress_pll_b;
+-- role a changes its global state and the sandbox libraries
+SET ROLE regress_pll_a;
+CREATE FUNCTION pll_a_set(v text) RETURNS void LANGUAGE pl_lua AS $$
+  _G.secret = v
+  string.upper = function() return 'changed' end
+  table.insert = nil
+  getmetatable('').__index.lower = function() return 'changed' end
+  _G.spi = nil
+$$;
+CREATE FUNCTION pll_a_get() RETURNS text LANGUAGE pl_lua AS $$
+  return tostring(_G.secret) .. '|' .. ('abc'):upper() .. '|' ..
+         type(table.insert) .. '|' .. ('ABC'):lower() .. '|' .. type(spi)
+$$;
+CREATE FUNCTION pll_a_definer() RETURNS text LANGUAGE pl_lua SECURITY DEFINER AS $$
+  _G.definer_state = 'set by a'
+  return _G.definer_state
+$$;
+SELECT pll_a_set('a-secret');
+ pll_a_set 
+-----------
+ 
+(1 row)
+
+SELECT pll_a_get();
+        pll_a_get         
+--------------------------
+ a-secret|ABC|nil|abc|nil
+(1 row)
+
+RESET ROLE;
+-- role b sees none of it, whether it runs its own function or a's
+SET ROLE regress_pll_b;
+CREATE FUNCTION pll_b_probe() RETURNS text LANGUAGE pl_lua AS $$
+  return tostring(_G.secret) .. '|' .. tostring(_G.definer_state) .. '|' ..
+         ('abc'):upper() .. '|' .. type(table.insert) .. '|' ..
+         ('ABC'):lower() .. '|' .. type(spi)
+$$;
+SELECT pll_b_probe();
+          pll_b_probe           
+--------------------------------
+ nil|nil|ABC|function|abc|table
+(1 row)
+
+SELECT pll_a_get();
+         pll_a_get          
+----------------------------
+ nil|ABC|function|abc|table
+(1 row)
+
+-- a SECURITY DEFINER function runs in its owner's state, not the caller's
+SELECT pll_a_definer();
+ pll_a_definer 
+---------------
+ set by a
+(1 row)
+
+SELECT pll_b_probe();
+          pll_b_probe           
+--------------------------------
+ nil|nil|ABC|function|abc|table
+(1 row)
+
+RESET ROLE;
+SET ROLE regress_pll_a;
+CREATE FUNCTION pll_a_definer_state() RETURNS text LANGUAGE pl_lua AS $$
+  return tostring(_G.definer_state)
+$$;
+SELECT pll_a_definer_state();
+ pll_a_definer_state 
+---------------------
+ set by a
+(1 row)
+
+SELECT pll_a_get();
+        pll_a_get         
+--------------------------
+ a-secret|ABC|nil|abc|nil
+(1 row)
+
+RESET ROLE;
+-- a function owned by one role runs in the caller's state when called
+SET ROLE regress_pll_b;
+CREATE FUNCTION pll_b_spy() RETURNS text LANGUAGE pl_lua AS $$
+  return tostring(_G.secret)
+$$;
+GRANT EXECUTE ON FUNCTION pll_b_spy() TO PUBLIC;
+RESET ROLE;
+SET ROLE regress_pll_a;
+SELECT pll_b_spy();
+ pll_b_spy 
+-----------
+ a-secret
+(1 row)
+
+RESET ROLE;
+SET ROLE regress_pll_b;
+SELECT pll_b_spy();
+ pll_b_spy 
+-----------
+ nil
+(1 row)
+
+RESET ROLE;
+DROP OWNED BY regress_pll_a, regress_pll_b;
+DROP ROLE regress_pll_a;
+DROP ROLE regress_pll_b;

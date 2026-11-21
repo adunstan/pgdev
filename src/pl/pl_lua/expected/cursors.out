@@ -1,0 +1,192 @@
+--
+-- Cursors
+--
+SET client_min_messages = warning;
+CREATE EXTENSION IF NOT EXISTS pl_lua;
+RESET client_min_messages;
+\set VERBOSITY terse
+CREATE TEMP TABLE nums (n integer);
+INSERT INTO nums SELECT generate_series(1, 10);
+-- fetching and moving in a scrollable cursor declared in SQL
+BEGIN;
+DECLARE c1 SCROLL CURSOR FOR SELECT n FROM nums ORDER BY n;
+DO LANGUAGE pl_lua $$
+  local c = spi.findcursor('c1')
+  print(c:name(), c:isopen(), c:isowned())
+  print(c:fetch()[1].n)
+  print(#c:fetch(3))
+  print(c:fetch(2, 'absolute')[1].n)
+  print(c:fetch(2, 'relative')[1].n)
+  print(c:fetch(1, 'prior')[1].n)
+  print(c:fetch(1, 'backward')[1].n)
+  c:move(0, 'absolute')
+  print(c:fetch()[1].n)
+  c:move(2, 'forward')
+  print(c:fetch()[1].n)
+  print(rawequal(c, spi.findcursor('c1')))
+  spi.execute('CLOSE c1')
+  print(c:isopen())
+  print(spi.findcursor('c1'))
+$$;
+INFO:  c1	true	false
+INFO:  1
+INFO:  3
+INFO:  2
+INFO:  4
+INFO:  3
+INFO:  2
+INFO:  1
+INFO:  4
+INFO:  true
+INFO:  false
+INFO:  nil
+COMMIT;
+-- opening cursors
+DO LANGUAGE pl_lua $$
+  local c = spi.newcursor('c2')
+  print(c:isopen(), c:isowned())
+  c:open('SELECT n FROM nums WHERE n >= $1 ORDER BY n', 8)
+  print(c:isopen(), c:isowned())
+  print(#c:fetch(5))
+  print(spi.execute("SELECT name FROM pg_cursors")[1].name)
+  c:close()
+  print(spi.execute("SELECT count(*) AS c FROM pg_cursors")[1].c)
+  c:open(spi.prepare('SELECT n FROM nums WHERE n < $1 ORDER BY n DESC', { 'integer' }), 3)
+  for r in c:rows() do print(r.n) end
+  c:close()
+$$;
+INFO:  false	false
+INFO:  true	true
+INFO:  3
+INFO:  c2
+INFO:  0
+INFO:  2
+INFO:  1
+-- cursor options of statements
+DO LANGUAGE pl_lua $$
+  local s1 = spi.prepare('SELECT n FROM nums ORDER BY n', nil, { scroll = true })
+  local s2 = spi.prepare('SELECT n FROM nums ORDER BY n', nil, { no_scroll = true })
+  local c1, c2 = s1:getcursor(), s2:getcursor()
+  print(c1:isowned(), c2:isowned())
+  for r in spi.rows('SELECT name, is_scrollable FROM pg_cursors ORDER BY name') do
+    print(r.is_scrollable)
+  end
+  print(#c1:fetch(2), c1:fetch(1, 'prior')[1].n)
+  c1:close()
+  c2:close()
+$$;
+INFO:  true	true
+INFO:  true
+INFO:  false
+INFO:  true
+INFO:  2	1
+-- an owned cursor is closed when its object is collected, a disowned one is not
+DO LANGUAGE pl_lua $$
+  do
+    local c = spi.newcursor('c3')
+    c:open('SELECT 1')
+    c = nil
+  end
+  collectgarbage()
+  collectgarbage()
+  print(spi.execute("SELECT count(*) AS c FROM pg_cursors WHERE name = 'c3'")[1].c)
+$$;
+INFO:  0
+-- cursors as arguments and results
+CREATE FUNCTION drain(c refcursor) RETURNS integer LANGUAGE pl_lua AS $$
+  local total = 0
+  for r in c:rows() do total = total + r.n end
+  return total
+$$;
+CREATE FUNCTION open_nums(name text) RETURNS refcursor LANGUAGE pl_lua AS $$
+  local c = spi.newcursor(name)
+  c:open('SELECT n FROM nums ORDER BY n DESC')
+  return c:disown()
+$$;
+BEGIN;
+DECLARE c4 CURSOR FOR SELECT n FROM nums;
+SELECT drain('c4');
+ drain 
+-------
+    55
+(1 row)
+
+SELECT open_nums('c5');
+ open_nums 
+-----------
+ c5
+(1 row)
+
+DO LANGUAGE pl_lua $$ collectgarbage() $$;
+FETCH 2 FROM c5;
+ n  
+----
+ 10
+  9
+(2 rows)
+
+COMMIT;
+-- a held cursor survives the end of its transaction
+CREATE PROCEDURE hold_it() LANGUAGE pl_lua AS $$
+  local s = spi.prepare('SELECT n FROM nums ORDER BY n', nil, { hold = true })
+  s:getcursor():disown()
+  spi.commit()
+$$;
+SELECT count(*) FROM pg_cursors;
+ count 
+-------
+     0
+(1 row)
+
+CALL hold_it();
+SELECT count(*) FROM pg_cursors;
+ count 
+-------
+     1
+(1 row)
+
+-- errors
+DO LANGUAGE pl_lua $$ spi.newcursor('c6'):fetch() $$;
+ERROR:  cursor "c6" is not open
+DO LANGUAGE pl_lua $$
+  local c = spi.newcursor('c7')
+  c:open('SELECT 1')
+  c:open('SELECT 2')
+$$;
+ERROR:  cursor "c7" is already open
+DO LANGUAGE pl_lua $$ spi.newcursor('c8'):open('INSERT INTO nums VALUES (11)') $$;
+ERROR:  cannot open INSERT query as cursor
+DO LANGUAGE pl_lua $$ spi.newcursor('c9'):open('SELECT $1::integer, $2::integer', 1) $$;
+ERROR:  wrong number of parameters for SPI query
+DO LANGUAGE pl_lua $$ spi.newcursor('c10'):open(spi.prepare('SELECT $1::integer AS a'), 1, 2) $$;
+ERROR:  wrong number of parameters for SPI query
+DO LANGUAGE pl_lua $$
+  local c = spi.newcursor('c11')
+  c:open('SELECT 1')
+  c:fetch(1, 'sideways')
+$$;
+ERROR:  [string "DO-block"]:4: invalid fetch direction "sideways"
+-- iterating over a cursor you opened leaves it open, however the loop ends
+DO LANGUAGE pl_lua $$
+  local c = spi.newcursor()
+  c:open("select generate_series(1, 5) as i")
+  for r in c:rows() do
+    if r.i == 2 then break end
+  end
+  print("after break", c:isopen(), c:fetch(1)[1].i)
+  for r in c:rows() do end
+  print("after exhaustion", c:isopen(), #c:fetch(1))
+  c:close()
+
+  -- but the cursor behind spi.rows() belongs to the loop
+  local function ncur() return spi.execute("select count(*) as c from pg_cursors")[1].c end
+  local n = ncur()
+  for r in spi.rows("select generate_series(1, 5)") do break end
+  print("spi.rows after break", ncur() - n)
+  for r in spi.rows("select generate_series(1, 5)") do end
+  print("spi.rows after exhaustion", ncur() - n)
+$$;
+INFO:  after break	true	3
+INFO:  after exhaustion	true	0
+INFO:  spi.rows after break	0
+INFO:  spi.rows after exhaustion	0

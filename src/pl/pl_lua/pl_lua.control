@@ -1,0 +1,8 @@
+# pl_lua extension
+comment = 'PL/Lua procedural language'
+default_version = '1.0'
+module_pathname = '$libdir/pl_lua'
+relocatable = false
+schema = pg_catalog
+superuser = true
+trusted = true

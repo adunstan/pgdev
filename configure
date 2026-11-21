@@ -635,6 +635,8 @@ DBTOEPUB
 FOP
 XSLTPROC
 XMLLINT
+LUA_LIBS
+LUA_CFLAGS
 TCL_SHARED_BUILD
 TCL_LIB_SPEC
 TCL_LIBS
@@ -729,6 +731,7 @@ with_ldap
 with_krb_srvnam
 krb_srvtab
 with_gssapi
+with_lua
 with_python
 with_perl
 with_tcl
@@ -865,6 +868,7 @@ with_tcl
 with_tclconfig
 with_perl
 with_python
+with_lua
 with_gssapi
 with_krb_srvnam
 with_pam
@@ -928,7 +932,9 @@ LDFLAGS_SL
 PERL
 PYTHON
 MSGFMT
-TCLSH'
+TCLSH
+LUA_CFLAGS
+LUA_LIBS'
 
 
 # Initialize some variables set by options.
@@ -1582,6 +1588,7 @@ Optional Packages:
   --with-tclconfig=DIR    tclConfig.sh is in DIR
   --with-perl             build Perl modules (PL/Perl)
   --with-python           build Python modules (PL/Python)
+  --with-lua              build Lua modules (PL/Lua)
   --with-gssapi           build with GSSAPI support
   --with-krb-srvnam=NAME  default service principal name in Kerberos (GSSAPI)
                           [postgres]
@@ -1657,6 +1664,8 @@ Some influential environment variables:
   PYTHON      Python program
   MSGFMT      msgfmt program for NLS
   TCLSH       Tcl interpreter program (tclsh)
+  LUA_CFLAGS  C compiler flags for LUA, overriding pkg-config
+  LUA_LIBS    linker flags for LUA, overriding pkg-config
 
 Use these variables to override the choices made by `configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -8453,6 +8462,39 @@ fi
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_python" >&5
 $as_echo "$with_python" >&6; }
+
+
+#
+# Optionally build Lua modules (PL/Lua)
+#
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build Lua modules" >&5
+$as_echo_n "checking whether to build Lua modules... " >&6; }
+
+
+
+# Check whether --with-lua was given.
+if test "${with_lua+set}" = set; then :
+  withval=$with_lua;
+  case $withval in
+    yes)
+      :
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --with-lua option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  with_lua=no
+
+fi
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_lua" >&5
+$as_echo "$with_lua" >&6; }
 
 
 #
@@ -19159,6 +19201,186 @@ fi
 
     CPPFLAGS=$ac_save_CPPFLAGS
 fi
+
+# Check for Lua
+if test "$with_lua" = yes; then
+  # Distributions disagree about the package name; try the same names as
+  # meson.build, in the same order.
+  pgac_lua_pkg=lua
+  for pgac_pkg in lua5.5 lua-5.5 lua55 lua5.4 lua-5.4 lua54; do
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"\$pgac_pkg\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "$pgac_pkg") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pgac_lua_pkg=$pgac_pkg; break
+fi
+  done
+
+pkg_failed=no
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $pgac_lua_pkg" >&5
+$as_echo_n "checking for $pgac_lua_pkg... " >&6; }
+
+if test -n "$LUA_CFLAGS"; then
+    pkg_cv_LUA_CFLAGS="$LUA_CFLAGS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"\$pgac_lua_pkg\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "$pgac_lua_pkg") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_LUA_CFLAGS=`$PKG_CONFIG --cflags "$pgac_lua_pkg" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+if test -n "$LUA_LIBS"; then
+    pkg_cv_LUA_LIBS="$LUA_LIBS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"\$pgac_lua_pkg\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "$pgac_lua_pkg") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_LUA_LIBS=`$PKG_CONFIG --libs "$pgac_lua_pkg" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+
+
+
+if test $pkg_failed = yes; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+	        LUA_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "$pgac_lua_pkg" 2>&1`
+        else
+	        LUA_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "$pgac_lua_pkg" 2>&1`
+        fi
+	# Put the nasty error message in config.log where it belongs
+	echo "$LUA_PKG_ERRORS" >&5
+
+	as_fn_error $? "Package requirements ($pgac_lua_pkg) were not met:
+
+$LUA_PKG_ERRORS
+
+Consider adjusting the PKG_CONFIG_PATH environment variable if you
+installed software in a non-standard prefix.
+
+Alternatively, you may set the environment variables LUA_CFLAGS
+and LUA_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details." "$LINENO" 5
+elif test $pkg_failed = untried; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+	{ { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "The pkg-config script could not be found or is too old.  Make sure it
+is in your PATH or set the PKG_CONFIG environment variable to the full
+path to pkg-config.
+
+Alternatively, you may set the environment variables LUA_CFLAGS
+and LUA_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details.
+
+To get pkg-config, see <http://pkg-config.freedesktop.org/>.
+See \`config.log' for more details" "$LINENO" 5; }
+else
+	LUA_CFLAGS=$pkg_cv_LUA_CFLAGS
+	LUA_LIBS=$pkg_cv_LUA_LIBS
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+fi
+  ac_save_CPPFLAGS=$CPPFLAGS
+  CPPFLAGS="$LUA_CFLAGS $CPPFLAGS"
+  ac_fn_c_check_header_mongrel "$LINENO" "lua.h" "ac_cv_header_lua_h" "$ac_includes_default"
+if test "x$ac_cv_header_lua_h" = xyes; then :
+
+else
+  as_fn_error $? "header file <lua.h> is required for Lua" "$LINENO" 5
+fi
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for Lua 5.4.6 or later" >&5
+$as_echo_n "checking for Lua 5.4.6 or later... " >&6; }
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <lua.h>
+#if LUA_VERSION_NUM < 504 || LUA_VERSION_NUM > 505
+#error unsupported Lua version
+#endif
+#if LUA_VERSION_NUM == 504 && LUA_VERSION_RELEASE_NUM < 50406
+#error Lua 5.4.6 or later required
+#endif
+
+int
+main ()
+{
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+     as_fn_error $? "Lua 5.4.6 or later, or Lua 5.5, is required" "$LINENO" 5
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+  ac_save_LIBS=$LIBS
+  LIBS="$LUA_LIBS $LIBS"
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether a program can be linked with Lua" >&5
+$as_echo_n "checking whether a program can be linked with Lua... " >&6; }
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <lua.h>
+#include <lauxlib.h>
+
+int
+main ()
+{
+lua_State *L = luaL_newstate();
+return L == NULL;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+     as_fn_error $? "could not link a program with the Lua library
+Check LUA_LIBS, or the pkg-config file for Lua." "$LINENO" 5
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+  LIBS=$ac_save_LIBS
+  CPPFLAGS=$ac_save_CPPFLAGS
+fi
+
+
 
 # check for <perl.h>
 if test "$with_perl" = yes; then

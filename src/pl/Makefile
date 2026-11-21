@@ -14,6 +14,12 @@ include $(top_builddir)/src/Makefile.global
 
 SUBDIRS = plpgsql
 
+ifeq ($(with_lua), yes)
+SUBDIRS += pl_lua
+else
+ALWAYS_SUBDIRS += pl_lua
+endif
+
 ifeq ($(with_perl), yes)
 SUBDIRS += plperl
 else
