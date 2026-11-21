@@ -79,6 +79,12 @@ else
 ALWAYS_SUBDIRS += sepgsql
 endif
 
+ifeq ($(with_lua),yes)
+SUBDIRS += hstore_pl_lua
+else
+ALWAYS_SUBDIRS += hstore_pl_lua
+endif
+
 ifeq ($(with_perl),yes)
 SUBDIRS += bool_plperl hstore_plperl jsonb_plperl
 else

@@ -1,0 +1,14 @@
+--
+-- Creating the transform extensions
+--
+CREATE EXTENSION hstore;
+CREATE EXTENSION pl_lua;
+CREATE EXTENSION pl_luau;
+CREATE EXTENSION hstore_pl_lua;
+CREATE EXTENSION hstore_pl_luau;
+
+SELECT l.lanname, t.trftype::regtype
+  FROM pg_transform t JOIN pg_language l ON l.oid = t.trflang
+ ORDER BY l.lanname;
+
+SELECT extname FROM pg_extension WHERE extname LIKE 'hstore\_pl\_lua%' ORDER BY extname;
