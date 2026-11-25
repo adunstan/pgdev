@@ -40,10 +40,10 @@ SELECT extname, extrelocatable, extnamespace::regnamespace
 -- a non-superuser may create the trusted language but not the untrusted one
 DROP EXTENSION pl_lua;
 DROP EXTENSION pl_luau;
-CREATE ROLE ext_user LOGIN;
-DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO ext_user', current_database()); END $$;
-GRANT CREATE ON SCHEMA public TO ext_user;
-SET ROLE ext_user;
+CREATE ROLE regress_pll_ext_user LOGIN;
+DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO regress_pll_ext_user', current_database()); END $$;
+GRANT CREATE ON SCHEMA public TO regress_pll_ext_user;
+SET ROLE regress_pll_ext_user;
 CREATE EXTENSION pl_lua;
 CREATE EXTENSION pl_luau;
 SELECT lanname, pg_get_userbyid(lanowner) AS owner
@@ -53,9 +53,9 @@ SELECT ext_user_f();
 RESET ROLE;
 DROP FUNCTION ext_user_f();
 DROP EXTENSION pl_lua;
-REVOKE CREATE ON SCHEMA public FROM ext_user;
-DO $$ BEGIN EXECUTE format('REVOKE CREATE ON DATABASE %I FROM ext_user', current_database()); END $$;
-DROP ROLE ext_user;
+REVOKE CREATE ON SCHEMA public FROM regress_pll_ext_user;
+DO $$ BEGIN EXECUTE format('REVOKE CREATE ON DATABASE %I FROM regress_pll_ext_user', current_database()); END $$;
+DROP ROLE regress_pll_ext_user;
 
 -- reinstall for the benefit of later tests
 CREATE EXTENSION pl_lua;

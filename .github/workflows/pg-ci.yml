@@ -749,7 +749,7 @@ jobs:
         ccache
         icu
         kerberos5
-        lua
+        lua54
         lz4
         meson
         openldap

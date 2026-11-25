@@ -108,11 +108,11 @@ DO LANGUAGE pl_luau $$
 $$;
 
 -- only superusers can change the initialization settings
-CREATE ROLE trusted_user;
-SET ROLE trusted_user;
+CREATE ROLE regress_pll_trusted_user;
+SET ROLE regress_pll_trusted_user;
 SET pl_lua.on_trusted_init = 'print(1)';
 SET pl_lua.on_init = 'print(1)';
 SET pl_lua.on_common_init = 'print(1)';
 SET pl_lua.install_globals = off;
 RESET ROLE;
-DROP ROLE trusted_user;
+DROP ROLE regress_pll_trusted_user;

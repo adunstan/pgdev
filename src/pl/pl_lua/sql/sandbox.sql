@@ -129,15 +129,15 @@ DO LANGUAGE pl_luau $$ print(rawget(_G, 'shared'), rawget(_G, 'visible')) $$;
 
 -- trusted code run by another role gets its own sandbox
 DO LANGUAGE pl_lua $$ _G.visible = 'first role' $$;
-CREATE ROLE sandbox_other;
-GRANT USAGE ON LANGUAGE pl_lua TO sandbox_other;
-SET ROLE sandbox_other;
+CREATE ROLE regress_pll_sandbox_other;
+GRANT USAGE ON LANGUAGE pl_lua TO regress_pll_sandbox_other;
+SET ROLE regress_pll_sandbox_other;
 DO LANGUAGE pl_lua $$ print(visible) _G.visible = 'other role' $$;
 DO LANGUAGE pl_lua $$ print(visible) $$;
 RESET ROLE;
 DO LANGUAGE pl_lua $$ print(visible) $$;
-REVOKE USAGE ON LANGUAGE pl_lua FROM sandbox_other;
-DROP ROLE sandbox_other;
+REVOKE USAGE ON LANGUAGE pl_lua FROM regress_pll_sandbox_other;
+DROP ROLE regress_pll_sandbox_other;
 
 -- Trusted code cannot set finalizers: the garbage collector could run them
 -- while PL/Lua's C code is in the middle of its work

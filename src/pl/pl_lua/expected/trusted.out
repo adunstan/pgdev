@@ -131,8 +131,8 @@ INFO:  false	[string "DO-block"]:5: new module name must be a string
 INFO:  false	[string "DO-block"]:6: global must be a boolean or a string
 INFO:  false	module name must be a string
 -- only superusers can change the initialization settings
-CREATE ROLE trusted_user;
-SET ROLE trusted_user;
+CREATE ROLE regress_pll_trusted_user;
+SET ROLE regress_pll_trusted_user;
 SET pl_lua.on_trusted_init = 'print(1)';
 ERROR:  permission denied to set parameter "pl_lua.on_trusted_init"
 SET pl_lua.on_init = 'print(1)';
@@ -142,4 +142,4 @@ ERROR:  permission denied to set parameter "pl_lua.on_common_init"
 SET pl_lua.install_globals = off;
 ERROR:  permission denied to set parameter "pl_lua.install_globals"
 RESET ROLE;
-DROP ROLE trusted_user;
+DROP ROLE regress_pll_trusted_user;
