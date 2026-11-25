@@ -1,0 +1,52 @@
+--
+-- Messages must be valid in the database encoding
+--
+SET client_min_messages = warning;
+CREATE EXTENSION IF NOT EXISTS pl_lua;
+RESET client_min_messages;
+\set VERBOSITY terse
+-- invalid byte sequences can only exist in a multibyte encoding
+SELECT getdatabaseencoding() = 'UTF8' AS utf8 \gset
+\if :utf8
+DO LANGUAGE pl_lua $$ print('bad\xffbyte') $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ print('good', 'caf\xc3\xa9') $$;
+INFO:  good	café
+DO LANGUAGE pl_lua $$ warn('bad\xffbyte') $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ warn('good ', 'caf\xc3\xa9') $$;
+WARNING:  good café
+DO LANGUAGE pl_lua $$ spi.notice('bad\xffbyte') $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ spi.notice('22012', 'ok', 'bad\xffdetail') $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ spi.notice('22012', 'ok', 'ok', 'bad\xffhint') $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ spi.elog('notice', { message = 'ok', detail = 'bad\xffdetail' }) $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ spi.elog('notice', { message = 'ok', table = 'bad\xfftable' }) $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ error('bad\xffbyte') $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ error('bad\xffbyte', 0) $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+DO LANGUAGE pl_lua $$ error('good caf\xc3\xa9', 0) $$;
+ERROR:  good café
+DO LANGUAGE pl_lua $$ spi.error('P0001', 'bad\xffbyte') $$;
+ERROR:  invalid byte sequence for encoding "UTF8": 0xff
+-- the error is a catchable SQL error with its own SQLSTATE
+DO LANGUAGE pl_lua $$
+  local ok, e = pcall(print, 'bad\xffbyte')
+  print(ok, e.sqlstate, e.errcode)
+  ok, e = pcall(warn, 'bad\xffbyte')
+  print(ok, e.sqlstate, e.errcode)
+  ok, e = pcall(spi.error, 'P0001', 'bad\xffbyte')
+  print(ok, e.sqlstate, e.errcode)
+$$;
+INFO:  false	22021	character_not_in_repertoire
+INFO:  false	22021	character_not_in_repertoire
+INFO:  false	22021	character_not_in_repertoire
+-- an error with a non-string message is not a problem
+DO LANGUAGE pl_lua $$ error({}) $$;
+ERROR:  (error object is a table value)
+\endif

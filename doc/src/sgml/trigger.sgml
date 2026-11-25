@@ -13,8 +13,9 @@
    languages, including
    <application>PL/pgSQL</application> (<xref linkend="plpgsql"/>),
    <application>PL/Tcl</application> (<xref linkend="pltcl"/>),
-   <application>PL/Perl</application> (<xref linkend="plperl"/>), and
-   <application>PL/Python</application> (<xref linkend="plpython"/>).
+   <application>PL/Perl</application> (<xref linkend="plperl"/>),
+   <application>PL/Python</application> (<xref linkend="plpython"/>), and
+   <application>PL/Lua</application> (<xref linkend="pllua"/>).
    After reading this chapter, you should consult the chapter for
    your favorite procedural language to find out the language-specific
    details of writing a trigger in it.

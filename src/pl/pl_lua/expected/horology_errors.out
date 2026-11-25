@@ -1,0 +1,117 @@
+--
+-- date and time values: invalid input
+--
+SET client_min_messages = warning;
+CREATE EXTENSION IF NOT EXISTS pl_lua;
+RESET client_min_messages;
+\set VERBOSITY terse
+SET timezone = 'GMT';
+SET datestyle = 'ISO, YMD';
+-- bad field values
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ hour="foo" }) $$;
+ERROR:  field "hour" must be a number
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ hour=1.2 }) $$;
+ERROR:  field "hour" must be an integer
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ hour=0/0 }) $$;
+ERROR:  field "hour" must be a finite number
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ hour=1/0 }) $$;
+ERROR:  field "hour" must be a finite number
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ sec=1/0 }) $$;
+ERROR:  field "sec" must be a finite number
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ epoch=0/0 }) $$;
+ERROR:  field "epoch" must be a finite number
+DO LANGUAGE pl_lua $$ print(pgtype.date{ epoch=1/0 }) $$;
+ERROR:  an infinite epoch is only valid for timestamps
+DO LANGUAGE pl_lua $$ print(pgtype.interval{}) $$;
+ERROR:  no date/time fields given
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ epoch=1/0 }) $$;
+ERROR:  date/time field value out of range
+-- bad time zones
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019, month=1, day=1, timezone="1234" }) $$;
+ERROR:  time zone "1234" not recognized
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019, month=1, day=1, timezone="Nowhere/Land" }) $$;
+ERROR:  time zone "Nowhere/Land" not recognized
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019, month=1, day=1, timezone=1234.5 }) $$;
+ERROR:  field "timezone" must be an integral number of seconds
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019, month=1, day=1, timezone=function() end }) $$;
+ERROR:  field "timezone" must be a string, number or true
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019, month=1, day=1, timezone=false }) $$;
+ERROR:  field "timezone" must not be false
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019, month=1, day=1, timezone=100000 }) $$;
+ERROR:  time zone offset is out of range
+\echo :LAST_ERROR_SQLSTATE
+22023
+-- combinations of fields that are not allowed
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ epoch=0, epoch_msec=0 }) $$;
+ERROR:  only one of "epoch", "epoch_msec" and "epoch_usec" can be given
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ epoch=0, year=2019 }) $$;
+ERROR:  calendar fields and epoch fields cannot both be given
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ epoch=0, hour=20 }) $$;
+ERROR:  calendar fields and epoch fields cannot both be given
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019 }) $$;
+ERROR:  fields "year", "month" and "day" are all required
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=2019, month=4 }) $$;
+ERROR:  fields "year", "month" and "day" are all required
+DO LANGUAGE pl_lua $$ print(pgtype.time{ min=10 }) $$;
+ERROR:  field "hour" is required
+DO LANGUAGE pl_lua $$ print(pgtype.time{ hour=20, sec=10 }) $$;
+ERROR:  field "sec" requires field "min"
+DO LANGUAGE pl_lua $$ print(pgtype.time{ year=2019, hour=20 }) $$;
+ERROR:  date fields cannot be given for this type
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ epoch=0, timezone="UTC" }) $$;
+ERROR:  a time zone cannot be given for this combination of type and fields
+DO LANGUAGE pl_lua $$ print(pgtype.timetz{ hour=20, timezone="America/Los_Angeles" }) $$;
+ERROR:  a time zone cannot be given for this combination of type and fields
+DO LANGUAGE pl_lua $$ print(pgtype.time{ hour=20, timezone=3600 }) $$;
+ERROR:  a time zone cannot be given for this combination of type and fields
+DO LANGUAGE pl_lua $$ print(pgtype.date{ year=2019, month=4, day=22, timezone="UTC" }) $$;
+ERROR:  a time zone cannot be given for this combination of type and fields
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ year=2019, month=4, day=22, timezone="UTC" }) $$;
+ERROR:  a time zone cannot be given for this combination of type and fields
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ hour=1, timezone=0 }) $$;
+ERROR:  a time zone cannot be given for this combination of type and fields
+-- out of range values
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ epoch=2^62 }) $$;
+ERROR:  date/time field value out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ epoch=1e300 }) $$;
+ERROR:  date/time field value out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ epoch_msec=math.mininteger }) $$;
+ERROR:  date/time field value out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ epoch_usec=math.maxinteger, usec=1 }) $$;
+ERROR:  date/time field value out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ epoch=-300000000000 }) $$;
+ERROR:  timestamp out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamptz{ year=-5000, month=1, day=1 }) $$;
+ERROR:  timestamp out of range
+DO LANGUAGE pl_lua $$ print(pgtype.date{ year=-5000, month=1, day=1 }) $$;
+ERROR:  date out of range
+DO LANGUAGE pl_lua $$ print(pgtype.date{ year=5874897, month=12, day=32 }) $$;
+ERROR:  date out of range
+DO LANGUAGE pl_lua $$ print(pgtype.date{ year=2000, month=1, day=2147483647 }) $$;
+ERROR:  date out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ year=2^32 + 2000, month=1, day=1 }) $$;
+ERROR:  field "year" is out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ year=2000, month=1, day=1, sec=2^40 }) $$;
+ERROR:  field "sec" is out of range
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp{ year=2000, month=1, day=1, msec=2^62 }) $$;
+ERROR:  date/time field value out of range
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ year=2^31 }) $$;
+ERROR:  field "year" is out of range
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ month=2147483647, year=1 }) $$;
+ERROR:  interval out of range
+-- values that are on the edge of the range still work
+DO LANGUAGE pl_lua $$ print(pgtype.date{ year=5874897, month=12, day=31 }) $$;
+INFO:  5874897-12-31
+DO LANGUAGE pl_lua $$ print(pgtype.date{ year=-4713, month=11, day=24 }) $$;
+INFO:  4714-11-24 BC
+DO LANGUAGE pl_lua $$ print(pgtype.interval{ day=-2^31, hour=2^31 - 1 }) $$;
+INFO:  @ 2147483648 days -2147483647 hours ago
+-- as_table and field access on the wrong types
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp('2019-04-22 10:20:30'):as_table('Europe/London')) $$;
+ERROR:  a time zone can only be given for timestamp with time zone values
+DO LANGUAGE pl_lua $$ print(pgtype.time('03:45:01').dow) $$;
+ERROR:  unit "dow" not supported for type time without time zone
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp('2019-04-22 10:20:30').nonesuch) $$;
+ERROR:  unit "nonesuch" not recognized for type timestamp without time zone
+DO LANGUAGE pl_lua $$ print(pgtype.timestamp('infinity'):as_table()) $$;
+ERROR:  timestamp out of range

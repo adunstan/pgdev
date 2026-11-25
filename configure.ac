@@ -922,6 +922,14 @@ AC_MSG_RESULT([$with_python])
 AC_SUBST(with_python)
 
 #
+# Optionally build Lua modules (PL/Lua)
+#
+AC_MSG_CHECKING([whether to build Lua modules])
+PGAC_ARG_BOOL(with, lua, no, [build Lua modules (PL/Lua)])
+AC_MSG_RESULT([$with_lua])
+AC_SUBST(with_lua)
+
+#
 # GSSAPI
 #
 AC_MSG_CHECKING([whether to build with GSSAPI support])
@@ -2434,6 +2442,47 @@ Use --without-tcl to disable building PL/Tcl.])
     AC_CHECK_HEADER(tcl.h, [], [AC_MSG_ERROR([header file <tcl.h> is required for Tcl])])
     CPPFLAGS=$ac_save_CPPFLAGS
 fi
+
+# Check for Lua
+if test "$with_lua" = yes; then
+  # Distributions disagree about the package name; try the same names as
+  # meson.build, in the same order.
+  pgac_lua_pkg=lua
+  for pgac_pkg in lua5.5 lua-5.5 lua55 lua5.4 lua-5.4 lua54; do
+    PKG_CHECK_EXISTS([$pgac_pkg], [pgac_lua_pkg=$pgac_pkg; break])
+  done
+  PKG_CHECK_MODULES(LUA, [$pgac_lua_pkg])
+  ac_save_CPPFLAGS=$CPPFLAGS
+  CPPFLAGS="$LUA_CFLAGS $CPPFLAGS"
+  AC_CHECK_HEADER(lua.h, [], [AC_MSG_ERROR([header file <lua.h> is required for Lua])])
+  AC_MSG_CHECKING([for Lua 5.4.6 or later])
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <lua.h>
+#if LUA_VERSION_NUM < 504 || LUA_VERSION_NUM > 505
+#error unsupported Lua version
+#endif
+#if LUA_VERSION_NUM == 504 && LUA_VERSION_RELEASE_NUM < 50406
+#error Lua 5.4.6 or later required
+#endif
+], [])],
+    [AC_MSG_RESULT(yes)],
+    [AC_MSG_RESULT(no)
+     AC_MSG_ERROR([Lua 5.4.6 or later, or Lua 5.5, is required])])
+  ac_save_LIBS=$LIBS
+  LIBS="$LUA_LIBS $LIBS"
+  AC_MSG_CHECKING([whether a program can be linked with Lua])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <lua.h>
+#include <lauxlib.h>
+], [lua_State *L = luaL_newstate();
+return L == NULL;])],
+    [AC_MSG_RESULT(yes)],
+    [AC_MSG_RESULT(no)
+     AC_MSG_ERROR([could not link a program with the Lua library
+Check LUA_LIBS, or the pkg-config file for Lua.])])
+  LIBS=$ac_save_LIBS
+  CPPFLAGS=$ac_save_CPPFLAGS
+fi
+AC_SUBST(LUA_CFLAGS)
+AC_SUBST(LUA_LIBS)
 
 # check for <perl.h>
 if test "$with_perl" = yes; then

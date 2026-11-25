@@ -1,0 +1,6 @@
+# hstore_pl_luau extension
+comment = 'transform between hstore and pl_luau'
+default_version = '1.0'
+module_pathname = '$libdir/hstore_pl_lua'
+relocatable = true
+requires = 'hstore,pl_luau'

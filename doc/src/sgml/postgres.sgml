@@ -223,6 +223,7 @@ break is not needed in a wider output rendering.
   &pltcl;
   &plperl;
   &plpython;
+  &pllua;
 
   &spi;
   &bgworker;

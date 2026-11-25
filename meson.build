@@ -1226,6 +1226,102 @@ endif
 
 
 ###############################################################
+# Library: Lua (for pl_lua)
+###############################################################
+
+luaopt = get_option('lua')
+lua_dep = not_found_dep
+lua_pkgconfig_name = ''
+if not luaopt.disabled()
+
+  # via pkg-config; distributions disagree about the package name
+  foreach luaname : ['lua5.5', 'lua-5.5', 'lua55', 'lua5.4', 'lua-5.4', 'lua54', 'lua']
+    lua_dep = dependency(luaname, required: false)
+    if lua_dep.found()
+      lua_pkgconfig_name = luaname
+      break
+    endif
+  endforeach
+
+  if not lua_dep.found()
+    lua_lib = cc.find_library('lua', required: luaopt, dirs: test_lib_d)
+    if lua_lib.found()
+      # a static liblua needs libm, which pkg-config would have supplied
+      lua_dep = declare_dependency(
+        dependencies: [lua_lib, cc.find_library('m', required: false)])
+    endif
+  endif
+
+  if lua_dep.found()
+    if not cc.has_header('lua.h',
+        args: test_c_args, include_directories: postgres_inc,
+        dependencies: lua_dep, required: luaopt)
+      lua_dep = not_found_dep
+    elif not cc.compiles('''
+#include <lua.h>
+#if LUA_VERSION_NUM < 504 || LUA_VERSION_NUM > 505
+#error unsupported Lua version
+#endif
+#if LUA_VERSION_NUM == 504 && LUA_VERSION_RELEASE_NUM < 50406
+#error Lua 5.4.6 or later required
+#endif
+''', args: test_c_args, include_directories: postgres_inc,
+        dependencies: lua_dep, name: 'Lua is 5.4.6 or later')
+      if luaopt.enabled()
+        error('Lua 5.4.6 or later, or Lua 5.5, is required')
+      endif
+      lua_dep = not_found_dep
+    elif not cc.links('''
+#include <lua.h>
+#include <lauxlib.h>
+
+int
+main(void)
+{
+    lua_State *L = luaL_newstate();
+
+    return L == NULL;
+}
+''', args: test_c_args, include_directories: postgres_inc,
+        dependencies: lua_dep, name: 'Lua library can be linked')
+      if luaopt.enabled()
+        error('could not link a program with the Lua library')
+      endif
+      warning('Lua was found, but a program could not be linked with it; not building pl_lua')
+      lua_dep = not_found_dep
+    endif
+  endif
+endif
+
+# Meson can't turn a dependency's compile arguments into a string for the
+# PGXS-compatible Makefile.global, so ask pkg-config directly.  The
+# includedir variable is not enough: Debian's lua5.x.pc, for example, sets
+# includedir to /usr/include and uses "Cflags: -I${includedir}/lua5.4".
+# Use an empty string if Lua wasn't found with pkg-config, or if
+# pkg-config can't be run here.
+lua_cflags_str = ''
+if lua_dep.found() and lua_pkgconfig_name != ''
+  pkgconfig_bin = find_program('pkg-config', required: false)
+  if pkgconfig_bin.found()
+    # Make sure any extra directories configured with -Dpkg_config_path
+    # are visible to this standalone pkg-config invocation too; dependency()
+    # picks those up automatically, but run_command() doesn't.
+    pkgconfig_env = environment()
+    pkgconfig_path = get_option('pkg_config_path')
+    if pkgconfig_path.length() > 0
+      pkgconfig_env.set('PKG_CONFIG_PATH', pkgconfig_path)
+    endif
+    lua_cflags_result = run_command(pkgconfig_bin, '--cflags', lua_pkgconfig_name,
+                                     env: pkgconfig_env, check: false)
+    if lua_cflags_result.returncode() == 0
+      lua_cflags_str = lua_cflags_result.stdout().strip()
+    endif
+  endif
+endif
+
+
+
+###############################################################
 # Library: pam
 ###############################################################
 
@@ -4358,6 +4454,7 @@ summary(
     'libxml': libxml,
     'libxslt': libxslt,
     'llvm': llvm,
+    'lua': lua_dep,
     'lz4': lz4,
     'nls': libintl,
     'openssl': ssl,

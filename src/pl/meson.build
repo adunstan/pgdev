@@ -2,6 +2,7 @@
 
 subdir('plpgsql')
 
+subdir('pl_lua')
 subdir('plperl')
 subdir('plpython')
 subdir('tcl')

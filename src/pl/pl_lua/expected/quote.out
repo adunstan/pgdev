@@ -1,0 +1,74 @@
+--
+-- Quoting functions
+--
+SET client_min_messages = warning;
+CREATE EXTENSION IF NOT EXISTS pl_lua;
+RESET client_min_messages;
+\set VERBOSITY terse
+DO LANGUAGE pl_lua $$
+  print(spi.quote_ident('foo'))
+  print(spi.quote_ident('Foo'))
+  print(spi.quote_ident('a b'))
+  print(spi.quote_ident('say "hi"'))
+  print(spi.quote_ident('select'))
+  print(spi.quote_ident(42))
+  print(spi.quote_literal('abc'))
+  print(spi.quote_literal("it's"))
+  print(spi.quote_literal([[back\slash]]))
+  print(spi.quote_literal(12.5))
+  print(spi.quote_nullable('abc'))
+  print(spi.quote_nullable(nil))
+  print(spi.quote_nullable())
+  print(spi.quote_nullable(7))
+$$;
+INFO:  foo
+INFO:  "Foo"
+INFO:  "a b"
+INFO:  "say ""hi"""
+INFO:  "select"
+INFO:  "42"
+INFO:  'abc'
+INFO:  'it''s'
+INFO:  E'back\\slash'
+INFO:  '12.5'
+INFO:  'abc'
+INFO:  NULL
+INFO:  NULL
+INFO:  '7'
+-- the results are usable in dynamic SQL
+CREATE FUNCTION make_table(tab text, val text) RETURNS bigint LANGUAGE pl_lua AS $$
+  spi.execute('CREATE TEMP TABLE ' .. spi.quote_ident(tab) .. ' (v text)')
+  spi.execute('INSERT INTO ' .. spi.quote_ident(tab) .. ' VALUES (' ..
+              spi.quote_nullable(val) .. ')')
+  return spi.execute('SELECT count(*) AS c FROM ' .. spi.quote_ident(tab) ..
+                     ' WHERE v IS NOT DISTINCT FROM ' .. spi.quote_nullable(val))[1].c
+$$;
+SELECT make_table('Odd Name', 'it''s');
+ make_table 
+------------
+          1
+(1 row)
+
+SELECT make_table('other', NULL);
+ make_table 
+------------
+          1
+(1 row)
+
+SELECT v FROM "Odd Name";
+  v   
+------
+ it's
+(1 row)
+
+-- errors
+DO LANGUAGE pl_lua $$ spi.quote_ident('a\0b') $$;
+ERROR:  [string "DO-block"]:1: string contains a zero byte
+DO LANGUAGE pl_lua $$ spi.quote_literal('a\0b') $$;
+ERROR:  [string "DO-block"]:1: string contains a zero byte
+DO LANGUAGE pl_lua $$ spi.quote_nullable('a\0b') $$;
+ERROR:  [string "DO-block"]:1: string contains a zero byte
+DO LANGUAGE pl_lua $$ spi.quote_literal(nil) $$;
+ERROR:  [string "DO-block"]:1: bad argument #1 to 'quote_literal' (string expected, got nil)
+DO LANGUAGE pl_lua $$ spi.quote_ident({}) $$;
+ERROR:  [string "DO-block"]:1: bad argument #1 to 'quote_ident' (string expected, got table)

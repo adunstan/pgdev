@@ -1,0 +1,41 @@
+--
+-- Messages must be valid in the database encoding
+--
+
+SET client_min_messages = warning;
+CREATE EXTENSION IF NOT EXISTS pl_lua;
+RESET client_min_messages;
+\set VERBOSITY terse
+
+-- invalid byte sequences can only exist in a multibyte encoding
+SELECT getdatabaseencoding() = 'UTF8' AS utf8 \gset
+\if :utf8
+
+DO LANGUAGE pl_lua $$ print('bad\xffbyte') $$;
+DO LANGUAGE pl_lua $$ print('good', 'caf\xc3\xa9') $$;
+DO LANGUAGE pl_lua $$ warn('bad\xffbyte') $$;
+DO LANGUAGE pl_lua $$ warn('good ', 'caf\xc3\xa9') $$;
+DO LANGUAGE pl_lua $$ spi.notice('bad\xffbyte') $$;
+DO LANGUAGE pl_lua $$ spi.notice('22012', 'ok', 'bad\xffdetail') $$;
+DO LANGUAGE pl_lua $$ spi.notice('22012', 'ok', 'ok', 'bad\xffhint') $$;
+DO LANGUAGE pl_lua $$ spi.elog('notice', { message = 'ok', detail = 'bad\xffdetail' }) $$;
+DO LANGUAGE pl_lua $$ spi.elog('notice', { message = 'ok', table = 'bad\xfftable' }) $$;
+DO LANGUAGE pl_lua $$ error('bad\xffbyte') $$;
+DO LANGUAGE pl_lua $$ error('bad\xffbyte', 0) $$;
+DO LANGUAGE pl_lua $$ error('good caf\xc3\xa9', 0) $$;
+DO LANGUAGE pl_lua $$ spi.error('P0001', 'bad\xffbyte') $$;
+
+-- the error is a catchable SQL error with its own SQLSTATE
+DO LANGUAGE pl_lua $$
+  local ok, e = pcall(print, 'bad\xffbyte')
+  print(ok, e.sqlstate, e.errcode)
+  ok, e = pcall(warn, 'bad\xffbyte')
+  print(ok, e.sqlstate, e.errcode)
+  ok, e = pcall(spi.error, 'P0001', 'bad\xffbyte')
+  print(ok, e.sqlstate, e.errcode)
+$$;
+
+-- an error with a non-string message is not a problem
+DO LANGUAGE pl_lua $$ error({}) $$;
+
+\endif

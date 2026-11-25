@@ -273,6 +273,43 @@
 
     <listitem>
      <para>
+      To build the <application>PL/Lua</application> procedural language,
+      you need a <productname>Lua</productname> installation, including the
+      header files and the library.  <productname>Lua</productname> 5.4,
+      release 5.4.6 or later, and <productname>Lua</productname> 5.5 are
+      supported.  No <productname>Lua</productname> interpreter program is
+      needed for the build.
+     </para>
+
+     <para>
+      <productname>pkg-config</productname> is used to find the required
+      compilation options.  The package names
+      <literal>lua5.5</literal>, <literal>lua-5.5</literal>,
+      <literal>lua55</literal>, <literal>lua5.4</literal>,
+      <literal>lua-5.4</literal>, <literal>lua54</literal> and
+      <literal>lua</literal> are tried in that order.  If none of these is
+      found, <application>meson</application> looks for a library named
+      <filename>lua</filename> in the default search path and the
+      directories given by <option>-Dextra_lib_dirs</option>.  The first
+      package found is used; if it is an unsupported version, or a program
+      cannot be linked with it, the build of
+      <application>PL/Lua</application> fails (or, with
+      <application>meson</application> in <literal>auto</literal> mode, is
+      skipped) rather than other package names being tried.  To select a
+      particular installation, set the variables <envar>LUA_CFLAGS</envar>
+      and <envar>LUA_LIBS</envar> when running
+      <filename>configure</filename>, for example:
+<programlisting>
+./configure ... --with-lua LUA_CFLAGS='-I/some/where/include' LUA_LIBS='-L/some/where/lib -llua'
+</programlisting>
+      or, with <application>meson</application>, set
+      <envar>PKG_CONFIG_PATH</envar> so that the desired
+      <filename>.pc</filename> file is found first.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
       To enable Native Language Support (<acronym>NLS</acronym>), that
       is, the ability to display a program's messages in a language
       other than English, you need an implementation of the
@@ -918,6 +955,20 @@ build-postgresql:
        <listitem>
         <para>
          Build the <application>PL/Python</application> server-side language.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry id="configure-option-with-lua">
+       <term><option>--with-lua</option></term>
+       <listitem>
+        <para>
+         Build the <application>PL/Lua</application> server-side language.
+         This requires <productname>Lua</productname> 5.4.6 or later, or
+         <productname>Lua</productname> 5.5.  The compiler and linker
+         options are found using <productname>pkg-config</productname>,
+         unless the variables <envar>LUA_CFLAGS</envar> and
+         <envar>LUA_LIBS</envar> are set.
         </para>
        </listitem>
       </varlistentry>
@@ -2406,6 +2457,18 @@ ninja install
        <para>
         Build the <application>PL/Python</application> server-side language.
         Defaults to auto.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="configure-with-lua-meson">
+      <term><option>-Dlua={ auto | enabled | disabled }</option></term>
+      <listitem>
+       <para>
+        Build the <application>PL/Lua</application> server-side language.
+        This requires <productname>Lua</productname> 5.4.6 or later, or
+        <productname>Lua</productname> 5.5, which is located using
+        <productname>pkg-config</productname>.  Defaults to auto.
        </para>
       </listitem>
      </varlistentry>

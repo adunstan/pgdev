@@ -121,6 +121,9 @@ option('libxslt', type: 'feature', value: 'auto',
 option('llvm', type: 'feature', value: 'disabled',
   description: 'LLVM support')
 
+option('lua', type: 'feature', value: 'auto',
+  description: 'Build with Lua support (PL/Lua)')
+
 option('lz4', type: 'feature', value: 'auto',
   description: 'LZ4 support')
 
