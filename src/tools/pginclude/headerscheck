@@ -50,6 +50,7 @@ PG_SYSROOT=`sed -n 's/^PG_SYSROOT[ 	]*=[ 	]*//p' "$MGLOB"`
 perl_includespec=`sed -n 's/^perl_includespec[ 	]*=[ 	]*//p' "$MGLOB"`
 python_includespec=`sed -n 's/^python_includespec[ 	]*=[ 	]*//p' "$MGLOB"`
 LUA_CFLAGS=`sed -n 's/^LUA_CFLAGS[ 	]*=[ 	]*//p' "$MGLOB"`
+with_lua=`sed -n 's/^with_lua[ 	]*=[ 	]*//p' "$MGLOB"`
 
 # needed on Darwin
 CPPFLAGS=`echo "$CPPFLAGS" | sed "s|\\\$(PG_SYSROOT)|$PG_SYSROOT|g"`
@@ -184,6 +185,9 @@ do
 
 	# ppport.h is not under our control, so we can't make it standalone.
 	test "$f" = src/pl/plperl/ppport.h && continue
+
+	# The PL/Lua headers can't be compiled without the Lua headers.
+	test "$with_lua" != yes && case "$f" in src/pl/pl_lua/*) continue ;; esac
 
 	# regression.h is not actually C, but ECPG code.
 	test "$f" = src/interfaces/ecpg/test/regression.h && continue

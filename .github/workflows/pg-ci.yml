@@ -76,6 +76,7 @@ env:
     -Dldap=enabled
     -Dlibxml=enabled
     -Dlibxslt=enabled
+    -Dlua=enabled
     -Dlz4=enabled
     -Dplperl=enabled
     -Dplpython=enabled
@@ -95,6 +96,7 @@ env:
     --with-libxml
     --with-libxslt
     --with-llvm
+    --with-lua
     --with-lz4
     --with-pam
     --with-perl
@@ -521,6 +523,13 @@ jobs:
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
       - *linux_prepare_workspace_step
+      - &linux_install_lua_step
+        name: Install Lua
+        env:
+          LUA_PACKAGE: liblua5.4-dev
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends "${LUA_PACKAGE}"
 
       - name: Configure
         shell: *su_postgres_shell
@@ -585,6 +594,10 @@ jobs:
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
       - *linux_prepare_workspace_step
+      - name: Install Lua
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends liblua5.4-dev:i386
 
       - name: Configure
         shell: *su_postgres_shell
@@ -592,6 +605,7 @@ jobs:
           meson setup \
             ${MESON_COMMON_PG_CONFIG_ARGS} \
             -Duuid=e2fs \
+            -Dlua=enabled \
             --buildtype=debug \
             --pkg-config-path /usr/lib/i386-linux-gnu/pkgconfig/ \
             -DPERL=perl5.40-i386-linux-gnu \
@@ -677,6 +691,7 @@ jobs:
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
       - *linux_prepare_workspace_step
+      - *linux_install_lua_step
 
       - name: Configure
         shell: *su_postgres_shell
@@ -684,6 +699,7 @@ jobs:
           meson setup \
             ${MESON_COMMON_PG_CONFIG_ARGS} \
             -Duuid=e2fs \
+            -Dlua=enabled \
             --buildtype=debug \
             -Dllvm=enabled \
             build
@@ -733,6 +749,7 @@ jobs:
         ccache
         icu
         kerberos5
+        lua
         lz4
         meson
         openldap
@@ -894,7 +911,10 @@ jobs:
       MESON_FEATURES: >-
         -Dauto_features=disabled
         -Dcpp_args=/std:c++20
+        -Dextra_include_dirs=C:/vcpkg/installed/x64-windows/include
+        -Dextra_lib_dirs=C:/vcpkg/installed/x64-windows/lib
         -Dldap=enabled
+        -Dlua=enabled
         -Dplperl=enabled
         -Dplpython=enabled
         -Dssl=openssl
@@ -1016,6 +1036,15 @@ jobs:
           if (!$?) { throw 'cmdfail' }
           echo ::endgroup::
 
+      # The runner image has vcpkg; get the Lua headers, import library and
+      # DLL from it.  The DLL has to be on PATH for the tests.
+      - name: Install Lua
+        shell: pwsh
+        run: |
+          vcpkg install lua:x64-windows
+          if (!$?) { throw 'cmdfail' }
+          echo "C:\vcpkg\installed\x64-windows\bin" >> $env:GITHUB_PATH
+
       - &window_setup_hosts_step
         name: Setup hosts file
         shell: pwsh
@@ -1131,6 +1160,7 @@ jobs:
             icu:p
             libxml2:p
             libxslt:p
+            lua:p
             lz4:p
             make:p
             meson:p
@@ -1221,6 +1251,7 @@ jobs:
       - *checkout_step
       - *ccache_restore_default_step
       - *ccache_restore_branch_step
+      - *linux_install_lua_step
 
       # gcc, cassert off, dtrace on
       - name: gcc warnings + (dtrace)
